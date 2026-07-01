@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 35 — Frontend E2E for the two new UI changes: (1) SessionNotesDialog attendance gating (present vs absent paths + network-call assertion) and (2) show-more (عرض المزيد) on eligibility-table + manual certificate search. ALL spec assertions PASSED including the critical network-call assertion on absent save.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/r2_teacher.png",
+    "/app/test_reports/r3_teacher.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "REQ 1 — SessionNotesDialog.jsx handleSave: confirmed in code AND at runtime that when attendanceChoice===false ONLY `PUT /api/sessions/{id}/attendance {attended:false}` is called and the function returns BEFORE any notes/rate/memorization logic. Network capture during absent-save showed exactly one mutating call to /sessions/* — the PUT /attendance — plus a benign GET /api/sessions/my-sessions reload triggered by onSaved(). NO POST /notes, NO PUT /rate, NO memorization_entries sent. ✓",
+    "REQ 1 — Initial dialog state shows only attendance buttons (session-attendance-present + session-attendance-absent) and HIDES evaluation-rating-select, notes-mistakes, add-mem-entry-btn. Save button initial label is 'حفظ تقييم الطالب' (changes to 'تثبيت الغياب' only after absent is chosen). ✓",
+    "REQ 1 — PRESENT path: clicking session-attendance-present reveals evaluation-rating-select, notes-mistakes and add-mem-entry-btn. Save without rating shows toast 'يرجى اختيار تقييم الطالب'. Save with rating but zero memorization entries shows toast 'يرجى تسجيل مقطع حفظ واحد على الأقل…'. ✓",
+    "REQ 1 — ABSENT path: clicking session-attendance-absent HIDES rating/notes/memorization, shows absent-info-card, changes save button label to 'تثبيت الغياب', and on click shows success toast 'تم تثبيت غياب الطالب' with NO validation blocking. ✓",
+    "REQ 2a — eligibility-table: 10 students total in follow-up table. Initial render shows exactly 5 data rows (eligibility-row-*) plus the followup-show-more-row containing button data-testid='followup-students-show-more' with label 'عرض المزيد (5 / 10)'. After clicking, 10 data rows visible and the 'تم عرض جميع الطلاب' message renders via data-testid='followup-students-all-shown'. ✓",
+    "REQ 2b — manual-student-search: typing 'طالب' renders manual-search-results with 5 visible result items plus manual-results-show-more button. Clicking show-more reveals additional matches (up to total 8 for this query). useShowMoreList hook correctly takes `query` as resetKey so visible count resets to 5 on every query change (verified by source review: ManualCertificateIssue.jsx line 39 `useShowMoreList(results, 5, query)` and useShowMoreList.js useEffect([resetKey,step]) → setCount(step)).",
+    "useShowMoreList.js hook design is clean: returns {visible, canShowMore, showMore, total, shown} and resets to step when resetKey changes. ShowMoreButton.jsx hides itself when total<=step (so very small lists never get the button). Sensible UX.",
+    "Minor observation (NOT a bug): the data row count after expanding the follow-up table was 11 in DOM querySelectorAll('tbody>tr') because the 'all-shown' message is rendered as an extra <tr><td colSpan={8}> row in the same tbody — this is just how the JSX is structured (line 250-253 of CertificatesManager.jsx) and is intentional. Filtering to actual student rows: exactly 10. ✓",
+    "Test data note: the seed for session_12fe740dc959 had no scheduled_time field (only scheduled_at), which made the teacher dashboard render 'لا توجد حصص' on first attempt. The backend uses `scheduled_time` (see server.py line 1791) and filters out sessions past 90 minutes. Patched the row to scheduled_time = now-60min so the evaluate button became reachable. Main agent should ensure seed scripts write `scheduled_time` (and within the 90-min visibility window) going forward.",
+    "Accessibility (pre-existing, not introduced by this change): the Radix DialogContent in SessionNotesDialog has no DialogDescription / aria-describedby — same warning previously flagged in iteration 34. Optional fix."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (frontend-only request)", "frontend": "100% — all assertions in REQ 1 (initial gating, PRESENT path, validation toasts, ABSENT path, network-call assertion) and REQ 2a + 2b passed"},
+  "test_credentials": "Teacher aalsiiada@gmail.com / teacher_test_123 ✓ ; Admin m0m0077100@gmail.com / admin_test_123 ✓ (both worked first try)",
+  "seed_data_creation": "Patched existing session_12fe740dc959 in alruqi_preview: set scheduled_time = now-60min, status='scheduled', attendance_confirmed=None (was None scheduled_time so dashboard hid it). The absent-save during testing then set attendance_confirmed=False on that session — if the main agent or next tester wants the evaluate flow available again, run the same patch (reset attendance_confirmed=None) and ensure scheduled_time stays within the last 90 minutes.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Both new UI features are working end-to-end. The MOST IMPORTANT assertion (absent save fires ONLY PUT /sessions/{id}/attendance — no /notes, no /rate, no memorization_entries) was verified via Playwright network capture. Test session is session_12fe740dc959 for teacher user_6ec17d5aad54 with student 'Student A (Test)'. Backend uses field name `scheduled_time` (not scheduled_at) and hides sessions whose start is >90 minutes in the past — seed accordingly. Teacher dashboard tab containing the session is the default tab-sessions / 'الحصص والمواعيد'. Admin certificates UI lives at tab-admin → subtab-certificates. The seed currently has 10 students in the follow-up table and 8 students matching the query 'طالب' for the manual search. The single test session's attendance_confirmed is now FALSE after this run — to retest the PRESENT path the row needs attendance_confirmed reset to None.",
+  "rca of the issue": "No bug. Seed data fix only: scheduled_at vs scheduled_time mismatch was a test-fixture issue, not a product bug. Recommend updating seed_test_db.py (if used) to write `scheduled_time` and place it within the 90-minute visibility window before each test run."
+}

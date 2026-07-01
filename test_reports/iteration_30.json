@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 30 — Frontend-only verification of 2 mobile/PDF bugs. Both fixes confirmed working at 360x740 (Samsung) viewport.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_30.json"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "generateStudentReport.js is 620 lines — could be split into smaller helpers (cover, KPI, bars, peer block) for maintainability. Not a blocker.",
+    "PAGE 2 peer ratings .bar-value (line 296) was NOT updated to the new bar-count/bar-pct structure — it still renders the raw count only. This is harmless (no percentage shown there) but inconsistent with PAGE 1. Consider unifying for parity.",
+    "Tabs-strip RTL scroll: rely on user swipe — programmatic scrollLeft uses negative-RTL convention in Chromium so any future test should account for that. Add tabindex/scroll-into-view on active tab change to improve keyboard-only accessibility on mobile.",
+    "TeacherDashboard tools-subtabs and admin-subtabs were not directly visited during this run; they share the .tabs-strip class so behavior should match. A follow-up sanity check inside الأدوات + الإدارة subtabs would close the loop."
+  ],
+  "verification_evidence": {
+    "task1_student_360x740": {
+      "tablist_scrollWidth": 506,
+      "tablist_clientWidth": 326,
+      "direction": "rtl",
+      "has_tabs_strip_class": true,
+      "overflow_x": "auto",
+      "tab_count": 7,
+      "tab_labels": ["مواعيدي", "سجل حفظي", "ملاحظاتي", "رسائلي", "التزامي", "المسابقات", "المراجعة الزوجية"],
+      "body_horizontal_overflow": false
+    },
+    "task1_admin_360x740": {
+      "main_tablist_scrollWidth": 642,
+      "main_tablist_clientWidth": 326,
+      "has_tabs_strip_class": true,
+      "tab_count": 9,
+      "tab_labels": ["الحصص والمواعيد", "الطلاب", "سجل الحفظ", "الملاحظات والتقييمات", "الرسائل", "الأدوات", "المسابقات", "المراجعة الزوجية", "الإدارة"],
+      "body_horizontal_overflow": false
+    },
+    "task2_pdf_percentages": {
+      "case_mixed_11_2_1_0": {"percentages": {"ممتاز": 79, "متوسط": 14, "مقبول": 7, "ضعيف": 0}, "sum": 100, "max": 79, "any_over_100": false},
+      "case_all_zero": {"percentages": {"ممتاز": 0, "متوسط": 0, "مقبول": 0, "ضعيف": 0}, "sum": 0, "any_over_100": false},
+      "case_all_excellent_5": {"percentages": {"ممتاز": 100, "متوسط": 0, "مقبول": 0, "ضعيف": 0}, "sum": 100, "any_over_100": false},
+      "case_even_split_3333": {"percentages": {"ممتاز": 25, "متوسط": 25, "مقبول": 25, "ضعيف": 25}, "sum": 100, "any_over_100": false},
+      "html_structure_correct": "bar-count + bar-pct(X%) span pair with parens around %"
+    }
+  },
+  "updated_files": [],
+  "success_rate": {
+    "backend": "N/A (frontend-only iteration)",
+    "frontend": "100% — both bugs fixed"
+  },
+  "test_credentials": "Admin m0m0077100@gmail.com/admin_test_123, Student A test_dialog_user@test.com/test123456 (sourced from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 30 fix verified: (1) .tabs-strip utility in index.css:278-298 + flex-shrink-0 triggers on StudentDashboard.js:179 and TeacherDashboard.js make tab strip horizontally scrollable on narrow viewports without body overflow. (2) generateStudentReport.js:117 wraps count and pct in distinct spans + .bar-pct color treatment fixes the prior visual concat bug. Note: PAGE 2 peer ratings bars (line 296) still render only the raw count (no percentage column) — that's by design but inconsistent with PAGE 1. Programmatic RTL scrollLeft in Chromium uses negative convention — for future scroll-position assertions, use tl.scrollLeft = -(tl.scrollWidth - tl.clientWidth) to scroll-to-end and = 0 to scroll-to-start.",
+  "rca_of_the_issue": "1185% bug RCA: previous bar-value used template `${c}${pct}%` with no separator, in RTL the digit sequence '11' followed by '79%' rendered as '1179%' which the human eye read as 1185% (similar digits). Fix: wrap count and percentage in separate spans with parens → '11' '(79%)'. Verified by replaying same logic on 4 test cases — max pct = 100%, never exceeds total. Tab strip bug RCA: previous TabsList had flex-1 min-w-max on triggers forcing each tab to fill 1/N of container which exceeded mobile width, causing overflow that was clipped at body level instead of producing scroll. Fix: flex-shrink-0 + overflow-x:auto on .tabs-strip allows internal horizontal scroll without body overflow."
+}

@@ -1,0 +1,35 @@
+{
+  "summary": "Phase 3 Competition Live Q&A: 13/13 backend pytest passed (5 Phase 2 regression + 8 new Phase 3). Frontend testids fully verified present in source (LiveWaitingRoomDialog.jsx, JoinCompetitionDialog.jsx). UI Playwright E2E could not be executed because /api/auth/login returns 403 from the Playwright sandbox egress IP (verified working 200 OK from container shell with same credentials/payload), so two-context teacher/student UI walk-through is BLOCKED by environment.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_competition_live.py",
+    "/app/backend/tests/test_competition_live_phase3.py",
+    "/app/test_reports/pytest/competition_live_phase3.xml"
+  ],
+  "action_items": [
+    "Main agent: visually verify host dialog stays open after Begin (transitions waiting -> in_progress with host-question-text, host-option-0..3 with correct highlighted, host-countdown, next-question-btn, end-early-btn, then complete-live-btn at last Q). Backend contract proven; only the in-browser dialog transition is unverified by this agent due to 403 from sandbox IP.",
+    "Main agent: visually verify student dialog Phase 3 view (student-question-text, 4 student-option-i without correct highlight, student-countdown red+pulse <=5s, answer-submitted-msg after click, persistent selection across re-render, reset on Next, final 'تمت المسابقة!' on Complete)."
+  ],
+  "critical_code_review_comments": [
+    "Phase 3 endpoints are clean: /begin atomically sets current_question_index=0 + current_question_id + question_started_at + total_questions; /next correctly returns 400 'انتهت الأسئلة' at last Q; /answer enforces student role, participant check, qid match, range, time_limit+2s grace; idempotency via competition_live_answers existing-check (returns first answer message).",
+    "GET /competitions/live/{lid}: sanitization strips correct_index for student via copy-then-pop; host/admin retains it. my_answer fetched for student only — good.",
+    "Minor: /complete uses status=='in_progress' guard but does NOT require host/admin role check in code path I traced; recommend explicit host/admin gate (consistent with /next which already enforces).",
+    "Minor: 2s grace is hard-coded; consider env-driven if QA flakiness emerges.",
+    "All required data-testids present and correctly named per spec — no testability gap."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_competition_live_phase3.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13 pytest)", "frontend": "UI E2E not executed (env 403 block); source-level testid audit 100%"},
+  "test_credentials": "Teacher: aalsiiada@gmail.com / teacher_test_123; Student: test_dialog_user@test.com / test123456 (both verified via curl from container shell)",
+  "seed_data_creation": "Each test creates TEST_Phase3_* / TEST_E2E_P3_* competitions and cleans up via DELETE /api/competitions/{cid} + /end. No residual data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 3 backend fully covered in /app/backend/tests/test_competition_live_phase3.py (8 tests): begin-loads-Q1+total_questions, GET sanitizes for student & returns my_answer, answer idempotency, validation (wrong qid / out-of-range), teacher-cannot-answer (403), next requires host & advances & returns 400 at last Q with 'انتهت الأسئلة', complete blocks subsequent answers ('قيد التقدّم') and joins ('منتهية بالفعل'), and time-window enforcement past grace. Phase 2 regression (test_competition_live.py) still 5/5 green. UI E2E was BLOCKED only because the browser-automation sandbox got 403 on POST /api/auth/login (likely egress-IP filtering); curl from this container returns 200. Workaround for next testing agent: either (a) run UI tests from main app container/Playwright with cookie-based auth, or (b) use the same direct-API session bootstrap pattern (set localStorage.session_token then goto /dashboard/{role}) once 403 is resolved.",
+  "rca_of_the_issue": "N/A — no product bug. Browser-automation host receives 403 on /api/auth/login while same request succeeds from app container; appears to be IP allow-list / WAF on the preview ingress. Not reproducible against backend; no fix needed in code."
+}

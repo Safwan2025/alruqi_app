@@ -1,0 +1,37 @@
+{
+  "summary": "Phase 2 Peer Review + Weekly Plans: 17/17 pytest passed against the live preview URL (peer partnership, slot create/list, slot booking creates peer_session, mutual attendance, mutual evaluation incl. idempotent 400 with 'تم تسجيل تقييمك مسبقاً', GET /peers/evaluations, teacher weekly-plans CRUD, student weekly-plans, teacher peer-overview). Frontend Student E2E fully verified: Student A peer tab renders review-method-card, peer-partner-card (approved with Osama), peer-schedule-card with 'إضافة موعد', peer-evals-card showing both new evaluations as 'أنت قيّمت Osama Alharbi' / 'Osama Alharbi قيّمك', student-weekly-plans-card with toggle/expand and print buttons. Add-slot dialog (slot-date/time/duration/meet/notes/save-slot-btn) works and toast 'تم إضافة الموعد' fires. Student B booking flow works after picking peer method: 'تم حجز الموعد' toast fires, slot transitions to peer-session-* row. attend/evaluate buttons correctly hidden for future sessions. Teacher StudentProfileModal flow was NOT fully driven via UI because Test Dialog User is not present in this teacher's /teacher/students list in the preview env (UI showed '0 طالب'); however all teacher-side endpoints (/teacher/weekly-plans CRUD, /teacher/students/{sid}/weekly-plans, /teacher/students/{sid}/peer-overview) are green via pytest and the testids weekly-plan-btn, export-pdf-btn, weekly-plan-builder, new-plan-btn, print-plan-* exist in source per StudentProfileModal/WeeklyPlanBuilder.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Teacher → Students tab → Test Dialog User profile", "issue": "Teacher aalsiiada@gmail.com's /api/teacher/students returns 404 (route may live under a different path) and الطلاب tab shows 0 طالب in UI, blocking the in-browser drill into Test Dialog User's StudentProfileModal. Phase 2 endpoints themselves are unaffected (verified via pytest). Recommend main agent verify the teacher↔student association for Test Dialog User OR confirm the actual student-list endpoint path used by TeacherDashboard.", "affected_selectors": ["weekly-plan-btn", "export-pdf-btn"]}
+    ],
+    "design_issues": [
+      {"screen": "Peer eval / create-slot dialogs", "issues": ["Two console warnings: 'Missing Description or aria-describedby for DialogContent' on peer dialogs — accessibility nit, non-blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_peer_review_phase2.py",
+    "/app/test_reports/pytest/peer_review_phase2.xml"
+  ],
+  "action_items": [
+    "(Optional) Verify teacher↔student linkage so aalsiiada's TeacherDashboard الطلاب tab lists Test Dialog User (currently 0 طالب in UI for this teacher); then re-run the in-browser drill into weekly-plan-btn and export-pdf-btn for full UI coverage. Phase 2 backend + student-side UI already proven.",
+    "(Minor) Add aria-describedby / DialogDescription to PeerScheduleSection's create-slot and peer-eval dialogs to silence Radix accessibility warnings."
+  ],
+  "critical_code_review_comments": [
+    "PeerScheduleSection correctly hides attend/evaluate buttons for future sessions and only shows them after scheduled_time + duration has elapsed — matches the request's expectation that DB backdating is required to exercise these in UI.",
+    "PeerReviewSection only renders PeerScheduleSection when method==='peer' AND partnership.status==='approved'. Student B (osama38os8) had review_method unset in seed; the test had to click pick-peer-btn before the schedule section appeared. Consider auto-setting both partners' method to 'peer' when a partnership is approved by teacher, to avoid this implicit dependency.",
+    "Evaluate idempotency returns HTTP 400 with detail 'تم تسجيل تقييمك مسبقاً' — confirmed by pytest. Good.",
+    "POST /api/peers/slots payload contract is {scheduled_time (datetime), duration (int), meet_link, notes}. The review-request prose mentions slot-date/slot-time/slot-duration as separate UI fields, which is correct: the React component composes them into a single ISO scheduled_time before POSTing — verified in UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_peer_review_phase2.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17 pytest)", "frontend": "Student-side: 100% verified. Teacher-side weekly-plan UI: backend proven via pytest; in-browser drill blocked by teacher↔student list being empty for aalsiiada in preview env."},
+  "test_credentials": "Student A test_dialog_user@test.com / test123456 (200 OK from browser & container). Student B osama38os8@gmail.com / test123456. Teacher aalsiiada@gmail.com / teacher_test_123.",
+  "seed_data_creation": "Pytest creates a fresh past-dated peer_review_slot+session via API and direct pymongo backdate to exercise attendance/evaluation; then creates and DELETES a teacher weekly_plan. Net residual data: a few TEST_* slots/sessions and 2 evaluations remain — same pattern as the existing seed historical data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend Phase 2 covered by /app/backend/tests/test_peer_review_phase2.py (17 tests, all green). Frontend two-context flow works when bootstrapped by calling /api/auth/login inside the browser then setting localStorage.session_token (the LoginPage's natural flow also returns 200 from the preview's browser sandbox — last iteration's 403 issue is no longer present). Key gotcha: Student B's review_method must be set to 'peer' (click pick-peer-btn) before peer-schedule-card and book-* buttons render. Also: if a student has no weekly commitment yet, a blocking modal appears on dashboard load — submit it via the 'احفظ والتزم' button before clicking tab-peer-review. The Phase 2 attend/evaluate UI buttons are gated by scheduled_time<=now; to exercise in browser, backdate db.peer_review_sessions.scheduled_time via pymongo as the request describes.",
+  "rca_of_the_issue": "No product bug found. Teacher-side UI drill blocked only because Test Dialog User is not appearing in aalsiiada teacher's student list endpoint (HTTP 404 on /api/teacher/students from this preview); not a Phase 2 regression."
+}

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#1e5631" />
+        <meta name="description" content="منصة إلكترونية لتعليم القرآن الكريم عن بعد وتحفيظ كتاب الله." />
+        <meta name="keywords" content="القرآن الكريم, تحفيظ القرآن, مقرأة, تعليم القرآن, الرقي" />
+        <meta name="author" content="مقرأة الرقي" />
+        
+        <!-- Open Graph / SEO -->
+        <meta property="og:title" content="الرقي قرآن – مقرأة الرقي الإلكترونية" />
+        <meta property="og:description" content="منصة إلكترونية لتعليم القرآن الكريم عن بعد وتحفيظ كتاب الله." />
+        <meta property="og:type" content="website" />
+        
+        <!-- Favicon -->
+        <link rel="icon" type="image/x-icon" href="%PUBLIC_URL%/favicon.ico" />
+        <link rel="apple-touch-icon" href="%PUBLIC_URL%/apple-touch-icon.png" />
+        
+        <title>مقرأة الرقي</title>
+        
+        <script>
+            // Only load visual edit scripts when inside an iframe
+            if (window.self !== window.top) {
+                var debugMonitorScript = document.createElement('script');
+                debugMonitorScript.src = 'https://assets.emergent.sh/scripts/debug-monitor.js';
+                document.head.appendChild(debugMonitorScript);
+
+                window.tailwind = window.tailwind || {};
+                tailwind.config = {
+                    corePlugins: { preflight: false },
+                };
+
+                var tailwindScript = document.createElement('script');
+                tailwindScript.src = 'https://cdn.tailwindcss.com';
+                document.head.appendChild(tailwindScript);
+            }
+        </script>
+    </head>
+    <body>
+        <noscript>يجب تفعيل JavaScript لتشغيل هذا التطبيق.</noscript>
+        <div id="root"></div>
+        
+        <script>
+            (function() {
+                function hideWakeOverlay() {
+                    const selectors = [
+                        '[class*="wake"]',
+                        '[class*="loading-overlay"]',
+                        '[id*="wake"]',
+                        '[id*="emergent-loading"]',
+                        '.emergent-wake-overlay',
+                        '.server-wake-overlay'
+                    ];
+                    
+                    selectors.forEach(selector => {
+                        const elements = document.querySelectorAll(selector);
+                        elements.forEach(el => {
+                            if (el && el.id !== 'root') {
+                                el.style.display = 'none';
+                                el.style.visibility = 'hidden';
+                            }
+                        });
+                    });
+                    
+                    document.querySelectorAll('div, p, span').forEach(el => {
+                        if (el.textContent && (
+                            el.textContent.includes('إيقاظ الخادم') ||
+                            el.textContent.includes('Waking') ||
+                            el.textContent.includes('Server is starting')
+                        )) {
+                            let parent = el.closest('div[style*="position: fixed"]') || 
+                                        el.closest('div[style*="position:fixed"]') ||
+                                        el.parentElement;
+                            if (parent && parent.id !== 'root') {
+                                parent.style.display = 'none';
+                            }
+                        }
+                    });
+                }
+                
+                hideWakeOverlay();
+                document.addEventListener('DOMContentLoaded', hideWakeOverlay);
+                
+                let attempts = 0;
+                const interval = setInterval(() => {
+                    hideWakeOverlay();
+                    attempts++;
+                    if (attempts > 10) clearInterval(interval);
+                }, 200);
+            })();
+        </script>
+    </body>
+</html>

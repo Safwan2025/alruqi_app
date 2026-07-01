@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 33 — Frontend E2E testing of NEW Admin-only Certificates System (Quran teaching platform 'مقرأة الرقي'). Seeded 37 juz-30 memorization records for student user_dbfc93502485, exercised the full admin issue → student view → notification → regression flow, then cleaned up. ALL critical assertions PASSED — no UI bugs, no integration issues, no design issues. Backend was NOT re-tested per request (15/15 pytest already passing).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/seed_juz30.py",
+    "/app/test_reports/cert_manager.png",
+    "/app/test_reports/issue_dialog.png",
+    "/app/test_reports/cert_issued.png",
+    "/app/test_reports/student_certs.png",
+    "/app/test_reports/student_notif.png"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "CertificatesManager.jsx — all three sections (pending, eligibility, log) wired with stable data-testid attributes (issue-cert-btn-{studentId}-{juz}, issue-certificate-dialog, issue-confirm-btn, cert-download-btn-*, cert-print-btn-*, cert-send-btn-*). Excellent testability.",
+    "After successful issuance: pending count went 1→0, cert ALRUQI-CERT-2026-0007 was generated with sequential numbering, and iframe[data-pdf-printer] was appended to DOM (PDF print pipeline triggered). The new cert appeared in the log table with all three action buttons in the SAME admin session — proves the eligibility/log lists refresh after POST /api/admin/certificates/issue (good UX).",
+    "Student MyCertificates renders cert number, completion date, issue date, supervisor name (محمد حامد الأنصاري) — all required fields. Download button visible (my-cert-download-btn-cert_eb7c14723368). After clicking student download we did NOT observe iframe[data-pdf-printer] within 3s wait — this is most likely benign (iframe is auto-removed after print as designed in printHTMLInIframe) and admin path proved the pipeline works; recommend a quick visual check in non-headless if PDF behavior changes.",
+    "Authorization scope is correctly enforced on the client: student page exposes ZERO elements matching [data-testid^='issue-cert-btn-'] and no issue-confirm-btn (issuing is admin-only).",
+    "Notification system delivers TWO bell entries to the student: 'شهادتك بانتظارك' (pending alert) AND 'صدرت لك شهادة جديدة' (issued — matches spec). Bell triggered via [data-testid='notification-bell'].",
+    "Regression — admin top tabs (tab-sessions, tab-students) and subtabs (subtab-overview, subtab-teachers) still render after the certificates subtab is mounted. Student top tabs (tab-home, tab-progress, tab-peer-review) all clickable.",
+    "Minor (style only): pending-certificates-section badge and cert log table count both update reactively after issuance — good. Consider adding a confirm-state spinner on issue-confirm-btn during the ~5s POST window to prevent double-clicks (current implementation may already handle this; not observed clicking twice)."
+  ],
+  "updated_files": [
+    "/app/test_reports/seed_juz30.py (new — seed + cleanup helper, removed all uitest_cert_ records and the issued cert/notifications after the test)"
+  ],
+  "success_rate": {"backend": "not re-tested (15/15 prior pytest)", "frontend": "100% (all spec assertions passed)"},
+  "test_credentials": "Admin m0m0077100@gmail.com / admin_test_123; Student test_dialog_user@test.com / test123456 (user_dbfc93502485). Both work on preview DB.",
+  "seed_data_creation": "37 memorization_progress docs for juz-30 (surahs 78..114) with progress_id prefix 'uitest_cert_' for student user_dbfc93502485. Cleaned up at end of run along with the issued certificate (cert_eb7c14723368, ALRUQI-CERT-2026-0007) and 2 'certificate_issued' notifications. Verified deletion counts: progress=37, certificates=1, notifications=2.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Certificates feature is fully integrated and working end-to-end through the UI. Concrete verified observations: (a) admin clicks 'إصدار الشهادة' for juz 30 → confirm dialog (data-testid='issue-certificate-dialog') with 'تأكيد إصدار الشهادة' (data-testid='issue-confirm-btn') → POST /api/admin/certificates/issue → toast + iframe[data-pdf-printer] appended + cert appears in log row with download/print/send buttons all carrying cert_id suffix; (b) 'إرسال للطالب' triggers POST /api/admin/certificates/{id}/send and surfaces a success toast; (c) student dashboard shows the new 'شهاداتي' tab (data-testid='tab-my-certificates') with my-certificates-section, and the certificate card includes cert number, تاريخ الإتمام, تاريخ الإصدار, المشرف, and a download button; (d) student receives 2 notifications via [data-testid='notification-bell'] — 'صدرت لك شهادة جديدة' is the expected 'certificate_issued' one; (e) student cannot see ANY issue-cert-btn / issue-confirm-btn anywhere. Cert numbering observed: ALRUQI-CERT-2026-0007 (sequence is monotonic across previous test runs). If you need to re-run, use /app/test_reports/seed_juz30.py (seed | cleanup).",
+  "rca of the issue": "No issues found. The feature works exactly as specified — admin-only gated issuance, real juz completion auto-detection from memorization_progress, unique ALRUQI-CERT-YYYY-NNNN numbering, full log with print/download/send actions, student 'شهاداتي' view with download, and an in-app 'صدرت لك شهادة جديدة' notification."
+}

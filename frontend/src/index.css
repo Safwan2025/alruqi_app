@@ -1,0 +1,485 @@
+@import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  direction: rtl;
+}
+
+body {
+  margin: 0;
+  font-family: 'IBM Plex Sans Arabic', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #F7F4EC;
+  overflow-x: hidden;
+  line-height: 1.7;
+}
+
+/* Prevent horizontal scroll on mobile */
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* Arabic typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Amiri', serif;
+  line-height: 1.5;
+}
+
+.font-amiri {
+  line-height: 1.5;
+}
+
+.font-plex {
+  line-height: 1.7;
+  letter-spacing: 0.01em;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* Spinner animation */
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@layer base {
+  :root {
+    --background: 42 30% 96%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 154 68% 20%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 45 78% 52%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 154 44% 32%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 154 68% 20%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer base {
+  [data-debug-wrapper="true"] {
+    display: contents !important;
+  }
+
+  [data-debug-wrapper="true"] > * {
+    margin-left: inherit;
+    margin-right: inherit;
+    margin-top: inherit;
+    margin-bottom: inherit;
+    padding-left: inherit;
+    padding-right: inherit;
+    padding-top: inherit;
+    padding-bottom: inherit;
+    column-gap: inherit;
+    row-gap: inherit;
+    gap: inherit;
+    border-left-width: inherit;
+    border-right-width: inherit;
+    border-top-width: inherit;
+    border-bottom-width: inherit;
+  }
+}
+
+/* ============================================
+   Global RTL fixes (Arabic-first app)
+   ============================================ */
+
+/* Auto-reverse Tailwind's space-x-* in RTL (Tailwind v3 default is LTR-only). */
+html[dir="rtl"] .space-x-1 > :not([hidden]) ~ :not([hidden]),
+html[dir="rtl"] .space-x-1\.5 > :not([hidden]) ~ :not([hidden]),
+html[dir="rtl"] .space-x-2 > :not([hidden]) ~ :not([hidden]),
+html[dir="rtl"] .space-x-2\.5 > :not([hidden]) ~ :not([hidden]),
+html[dir="rtl"] .space-x-3 > :not([hidden]) ~ :not([hidden]),
+html[dir="rtl"] .space-x-4 > :not([hidden]) ~ :not([hidden]),
+html[dir="rtl"] .space-x-5 > :not([hidden]) ~ :not([hidden]),
+html[dir="rtl"] .space-x-6 > :not([hidden]) ~ :not([hidden]),
+html[dir="rtl"] .space-x-8 > :not([hidden]) ~ :not([hidden]) {
+  --tw-space-x-reverse: 1;
+}
+
+/* Sonner / toaster — anchor to top-right in RTL by default */
+html[dir="rtl"] [data-sonner-toaster][data-x-position="right"] {
+  right: var(--offset, 16px);
+  left: auto;
+}
+html[dir="rtl"] [data-sonner-toaster][data-x-position="left"] {
+  left: var(--offset, 16px);
+  right: auto;
+}
+
+/* Radix Dialog/Sheet content — ensure close button mirrors to the left in RTL */
+html[dir="rtl"] [data-radix-dialog-content] > button[aria-label="Close"],
+html[dir="rtl"] [data-state] > button.absolute.right-4.top-4 {
+  right: auto;
+  left: 1rem;
+}
+
+/* Improve list/table default alignment in RTL */
+html[dir="rtl"] table {
+  text-align: right;
+}
+html[dir="rtl"] th {
+  text-align: right;
+}
+
+/* Date/time text that should remain LTR but stay within RTL flow */
+.ltr-content,
+[dir="ltr"].inline-block {
+  unicode-bidi: embed;
+}
+
+
+/* ============================================
+   Visual polish layer (Feb 2026)
+   Small, safe upgrades. No layout shifts.
+   ============================================ */
+
+/* Soft, refined card shadow + slightly warmer borders (override only the default 'card' look) */
+@layer base {
+  .bg-card, [class*=" card"]:not([class*="card-hover"]):not([class*="bg-card "]) {
+    /* no-op selectors kept for clarity */
+  }
+}
+
+/* Refined card-hover used across cards (already used in the app) */
+.card-hover {
+  transition: box-shadow 0.25s ease, transform 0.2s ease, border-color 0.25s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 10px 30px -12px rgba(20, 61, 34, 0.18), 0 3px 8px -4px rgba(20, 61, 34, 0.08);
+  transform: translateY(-1px);
+  border-color: hsl(154 30% 70% / 0.6);
+}
+
+/* Universal button micro-interaction: subtle scale on press, smooth color */
+@layer base {
+  button, [role="button"], a[class*="rounded-full"], a[class*="rounded-xl"] {
+    transition: background-color 0.18s ease, color 0.18s ease,
+                box-shadow 0.18s ease, transform 0.12s ease, border-color 0.18s ease;
+  }
+  button:active:not(:disabled), [role="button"]:active:not([aria-disabled="true"]) {
+    transform: translateY(0.5px) scale(0.985);
+  }
+}
+
+/* Refined focus ring (accessible + on-brand) */
+@layer base {
+  *:focus-visible {
+    outline: 2px solid hsl(154 68% 30% / 0.55);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  /* Keep popovers/dialog content from showing the outline on the outer container */
+  [role="dialog"]:focus-visible,
+  [data-radix-popper-content-wrapper]:focus-visible {
+    outline: none;
+  }
+}
+
+/* Headings — slight letter-spacing for Amiri elegance */
+h1, h2, h3, .font-amiri {
+  letter-spacing: 0.005em;
+}
+
+/* Tabs polish — softer inactive tabs, smoother active transition */
+[role="tablist"] [role="tab"][data-state="inactive"] {
+  color: hsl(0 0% 35%);
+}
+[role="tablist"] [role="tab"]:hover:not([data-state="active"]) {
+  color: hsl(154 68% 20%);
+  background-color: hsl(154 40% 95% / 0.6);
+}
+[role="tablist"] [role="tab"][data-state="active"] {
+  box-shadow: 0 6px 14px -8px rgba(20, 61, 34, 0.35);
+}
+
+/* Inputs — slightly warmer placeholder, smoother focus border */
+input::placeholder, textarea::placeholder { color: hsl(0 0% 55%); opacity: 1; }
+input:focus, textarea:focus, select:focus {
+  border-color: hsl(154 50% 40% / 0.65);
+  box-shadow: 0 0 0 3px hsl(154 50% 40% / 0.12);
+}
+
+/* Tables: a bit more breathing room + subtle row hover */
+table { border-collapse: separate; border-spacing: 0; }
+table tbody tr { transition: background-color 0.15s ease; }
+table tbody tr:hover td { background-color: hsl(154 40% 96% / 0.55); }
+
+/* Dialog header line under titles (small, identity-aware) */
+@layer components {
+  [data-radix-dialog-content] h2.font-amiri::after,
+  [data-radix-dialog-content] [class*="DialogTitle"]::after {
+    content: none; /* opt-in elsewhere */
+  }
+}
+
+/* Sonner toasts: align font with app + RTL natural */
+[data-sonner-toaster] [data-sonner-toast] {
+  font-family: 'IBM Plex Sans Arabic', sans-serif !important;
+  direction: rtl;
+  text-align: right;
+  border-radius: 12px !important;
+}
+
+/* Scrollbar — quiet identity */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsl(154 25% 80% / 0.55);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(154 35% 65% / 0.7);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* Section dividers used in long pages */
+.section-divider {
+  height: 1px;
+  background: linear-gradient(to left, transparent, hsl(154 25% 70% / 0.4), transparent);
+  margin: 1.25rem 0;
+}
+
+/* Horizontal tab strip — works flawlessly on narrow mobile (Samsung etc.)
+   + RTL. Lets users scroll smoothly from first to last tab. */
+   
+/* Global responsive fix for dashboard tab strips
+   Works for student, teacher, and admin tabs without changing component logic.
+*/
+.tabs-strip {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch;
+  gap: 0.25rem;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  scroll-padding-inline: 0.75rem;
+  padding: 0.25rem;
+  box-sizing: border-box;
+}
+
+/* Keep every tab visible and prevent shrinking/cutting */
+.tabs-strip > *,
+.tabs-strip [role="tab"],
+.tabs-strip button {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+  min-width: max-content;
+}
+
+/* Mobile-specific improvement */
+@media (max-width: 640px) {
+  .tabs-strip {
+    justify-content: flex-start !important;
+    padding-inline: 0.5rem;
+    margin-inline: 0;
+    border-radius: 0.875rem;
+  }
+
+  .tabs-strip [role="tab"],
+  .tabs-strip button {
+    font-size: 0.75rem;
+    padding-inline: 0.75rem;
+  }
+}
+
+/* Hide only the tab scrollbar visually, but keep scrolling working */
+.tabs-strip::-webkit-scrollbar {
+  height: 4px;
+}
+
+.tabs-strip::-webkit-scrollbar-thumb {
+  background: hsl(154 25% 70% / 0.5);
+  border-radius: 999px;
+}
+
+.tabs-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Premium pill chip */
+.pill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background: hsl(154 40% 95%);
+  border: 1px solid hsl(154 30% 80% / 0.6);
+  color: hsl(154 68% 20%);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Loading dots used in async buttons */
+.loading-dots::after {
+  content: '...';
+  animation: dots 1.4s steps(4, end) infinite;
+  display: inline-block;
+  width: 1em;
+  text-align: right;
+}
+@keyframes dots { 0%, 20% { content: ''; } 40% { content: '.'; } 60% { content: '..'; } 80%, 100% { content: '...'; } }
+
+/* Better date input look (RTL) */
+input[type="date"], input[type="time"], input[type="datetime-local"] {
+  font-family: 'IBM Plex Sans Arabic', sans-serif;
+  direction: rtl;
+  text-align: right;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  margin-left: 0;
+  margin-right: 0.25rem;
+  cursor: pointer;
+  opacity: 0.7;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* Print-friendly base (in case user prints any page directly) */
+@media print {
+  body { background: #fff; }
+  .no-print, [data-no-print] { display: none !important; }
+}
+
+/* ============================================
+   Polish refresh — visible upgrade
+   (Feb 2026, second pass)
+   Safe additive rules only. No layout breakage.
+   ============================================ */
+
+/* Refined tabs: pill-style active, soft hover, no jumpy underline */
+[role="tablist"] {
+  gap: 4px;
+  padding: 4px;
+  background-color: hsl(154 25% 95%);
+  border-radius: 14px;
+  border: 1px solid hsl(154 25% 88%);
+}
+[role="tablist"] > [role="tab"] {
+  border-radius: 10px !important;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 8px 12px;
+}
+[role="tablist"] > [role="tab"][data-state="active"] {
+  background-color: #fff !important;
+  color: hsl(154 68% 24%) !important;
+  box-shadow: 0 4px 12px -6px rgba(20, 61, 34, 0.30), 0 0 0 1px hsl(154 25% 80% / 0.5);
+}
+[role="tablist"] > [role="tab"][data-state="inactive"] {
+  background-color: transparent !important;
+}
+
+/* Cards — slightly bolder border + softer corner radius across the app */
+[class*="rounded-lg"] { border-radius: 12px !important; }
+[class*="rounded-xl"] { border-radius: 14px !important; }
+[class*="rounded-2xl"] { border-radius: 18px !important; }
+
+/* Card global look (target shadcn cards only, leave inline images alone) */
+.bg-card, .bg-white, [class*="bg-gradient-to"][class*="rounded"] {
+  /* keep as is; only refine borders */
+}
+
+/* Buttons: refine secondary (gold) gradient and primary depth */
+button[class*="bg-primary"], a[class*="bg-primary"] {
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 6px 18px -10px rgba(20, 61, 34, 0.45);
+}
+button[class*="bg-primary"]:hover, a[class*="bg-primary"]:hover {
+  box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 10px 22px -10px rgba(20, 61, 34, 0.55);
+}
+button[class*="bg-secondary"], a[class*="bg-secondary"] {
+  box-shadow: 0 1px 0 rgba(255,255,255,0.15) inset, 0 6px 18px -10px rgba(180, 130, 30, 0.45);
+}
+
+/* Inputs/textareas: slightly taller + softer */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+textarea, select {
+  border-radius: 10px !important;
+}
+
+/* Subtle background pattern on top of solid surfaces (very gentle, no clash) */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 90% -10%, hsl(38 70% 75% / 0.10), transparent 40%),
+    radial-gradient(circle at -10% 110%, hsl(154 50% 60% / 0.06), transparent 45%);
+}
+
+/* Section title decoration — Quranic-style flourish (used optionally) */
+.section-title-ornament {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.section-title-ornament::before,
+.section-title-ornament::after {
+  content: '';
+  display: inline-block;
+  width: 28px; height: 1px;
+  background: linear-gradient(to left, transparent, hsl(38 70% 50% / 0.55), transparent);
+}
+
+/* Subtle ring on focused dialog content */
+[data-radix-dialog-content] {
+  box-shadow: 0 20px 50px -20px rgba(20, 61, 34, 0.22), 0 6px 16px -8px rgba(0,0,0,0.08);
+}
+
+/* Empty-state polish */
+[data-empty-state], .empty-state {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: hsl(0 0% 45%);
+  background: hsl(154 25% 97%);
+  border: 1px dashed hsl(154 25% 80%);
+  border-radius: 14px;
+}
+
+/* RTL micro-fix for icons inside buttons (keeps icon-then-text rhythm in Arabic) */
+button > svg + span, a > svg + span,
+button > span + svg, a > span + svg {
+  vertical-align: middle;
+}
+

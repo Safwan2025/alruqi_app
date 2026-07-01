@@ -1,0 +1,94 @@
+.App {
+  min-height: 100vh;
+  background: #F7F4EC;
+}
+
+/* Remove center alignment */
+.App-header {
+  background-color: #0F5132;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #D4AF37;
+}
+
+/* Button animations */
+button {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 25px rgba(15, 81, 50, 0.15);
+}
+
+/* Loading spinner */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Fade in animation */
+.fade-in {
+  animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* WebRTC Video styles */
+video {
+  border-radius: 12px;
+  background: #000;
+}
+
+/* Hide Emergent wake-up/loading overlay */
+[class*="wake"], 
+[class*="loading-overlay"],
+[id*="wake"],
+[id*="emergent-loading"],
+.emergent-wake-overlay,
+.server-wake-overlay,
+#emergent-wake-screen,
+div[style*="إيقاظ"],
+div[style*="Waking"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}

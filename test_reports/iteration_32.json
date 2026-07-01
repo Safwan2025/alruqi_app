@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 32 backend testing for POST /api/teacher/weekly-plans/suggest review-day precision. Built /app/backend/tests/test_iter32_review_precision.py (9 tests) covering the 4 spec scenarios + 2 regression cases. Results: 8/9 PASS, 1 FAIL. PASS: (1) صفوان + from_start → review[0] = النساء 1-23, ص 77-81 (his real range, الأنعام frontier excluded); (2) review_pool summary correctly excludes الأنعام; (3) seeded 1..25 + from_start → review[0]=النور 1-64 ص 350-359, review[1]=المؤمنون 1-118 ص 342-349 with precise full ranges; (4) no review day has empty from_ayah/to_ayah when student has records; (5) only-frontier student → review falls back to that surah 1..highest_to (e.g. البقرة 1-20), NOT الفاتحة; (6) memorize-day iter31 logic intact (الشعراء آية 1, ص 367); (7) test day populated; (8) Madinah page anchors correct. FAIL: fresh student (zero records) + from_start → review day defaults to الفاتحة 1-1 instead of the spec-required 'لا يوجد محفوظ سابق للمراجعة بعد' with empty surah/ayah. ROOT CAUSE: server.py:6254-6258 fallback unconditionally seeds review_segments with the frontier surah when review_segments is empty AND cur_sn is set — but for a fresh student cur_sn defaults to الفاتحة (from get_position_summary direction default), so the fallback wrongly applies. Regression suite: all 54 prior tests (test_iter29_fixes + test_iter31_direction_override + test_peer_review_phase2 + test_peer_cancel_and_weekly_suggest) still PASS.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/teacher/weekly-plans/suggest",
+        "issue": "Fresh student (zero memorization_progress records) with direction=from_start receives review days populated with الفاتحة 1-1 (page 1) instead of the spec-required empty/sentinel response. Expected: surah='', from_ayah='', to_ayah='', review_target='لا يوجد محفوظ سابق للمراجعة بعد'. Actual: {surah:'الفاتحة', from_ayah:1, to_ayah:1, from_page:1, to_page:1, review_target:'مراجعة سورة الفاتحة من الآية 1 إلى 1 (ص 1)'}. This is the exact 'default to الفاتحة' behavior the iter32 user correction asked to eliminate.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter32_review_precision.py",
+    "/app/test_reports/pytest/iter32_results.xml",
+    "/app/test_reports/pytest/iter32_regression.xml"
+  ],
+  "action_items": [
+    "Fix server.py:6254-6258 fresh-student fallback. The current logic `if not review_segments and cur_sn: append({name: cur_sn, ...})` should be gated on whether the student has at least one memorization record on that frontier surah (or equivalently, gated on `pos['surah_count'] > 0`). Suggested change: replace the unconditional append with `if not review_segments and cur_sn and next_start > 1:` — `next_start > 1` indicates the student has recorded at least one ayah on the frontier, which is the iter32 spec for the 'only frontier started' case (case 4). For a truly fresh student, `next_start == 1` and `pos['surah_count'] == 0`, so review_segments stays empty and the existing else-branch at 6316-6325 correctly emits the 'لا يوجد محفوظ سابق' sentinel.",
+    "Re-run /app/backend/tests/test_iter32_review_precision.py::TestFreshStudentReviewIsEmpty after the fix; the remaining 8 tests should continue to pass (verified by current run)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:6210-6258 — review_segments builder is correctly implemented: pulls union of all (from_ayah,to_ayah) per surah from memorization_progress, normalizes bad/missing ayah ranges to whole-surah, excludes the frontier surah, sorts by recency in chosen direction. Verified working for صفوان (النساء normalized to 1-23 across 4 split records) and seeded 1..25 (النور, المؤمنون rotation).",
+    "server.py:6254-6258 — frontier-fallback for empty review_segments is too aggressive. It fires for a brand-new student because get_position_summary sets cur_sn=الفاتحة (default) when no records exist. Needs additional guard `next_start > 1` (or equivalently `pos['surah_count'] > 0`) so the spec's empty-sentinel branch is reached for fresh students.",
+    "server.py:6299-6325 — review-day rendering correctly populates from_ayah/to_ayah/from_page/to_page from review_segments[i % len] and emits the spec-required empty payload + 'لا يوجد محفوظ سابق للمراجعة بعد' message when review_segments is empty.",
+    "server.py:6390 — summary.review_pool correctly uses [seg['name'] for seg in review_segments[:6]] and excludes frontier; verified for صفوان (الأنعام absent, النساء present).",
+    "Minor (style): consider passing `pos['surah_count']` explicitly into the fallback predicate to make the intent (skip fallback for fresh students) self-documenting."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter32_review_precision.py (new — 9 tests)"
+  ],
+  "success_rate": {
+    "backend": "89% (8/9 iter32 tests; 54/54 prior-iteration regression)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "Admin m0m0077100@gmail.com/admin_test_123; صفوان user_ccd8568d42ba (real preview DB). Seed students TEST_-prefixed, auto-cleaned by module-scoped fixtures.",
+  "seed_data_creation": "Three temp users per test run, all cleaned automatically: (1) TEST_ student with surahs 1..25 fully memorized; (2) TEST_ fresh student with zero records; (3) TEST_ student with a single partial record (البقرة 1-20) to exercise the only-frontier fallback. All three teardown via pytest fixture finalizers (delete from users + memorization_progress).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: source /app/frontend/.env && source /app/backend/.env && pytest /app/backend/tests/test_iter32_review_precision.py -v. Only TestFreshStudentReviewIsEmpty.test_fresh_review_has_no_default_surah currently fails — confirms the spec violation reported. After main agent applies the suggested guard at server.py:6254, ALL 9 tests should pass. Concrete observed payload for the failing case (fresh student + from_start, direction='from_start'): every review day = {surah:'الفاتحة', from_ayah:1, to_ayah:1, from_page:1, to_page:1, page_range:'ص 1', review_target:'مراجعة سورة الفاتحة من الآية 1 إلى 1 (ص 1)'}. Cases 1,2,3 (الفرقان frontier handling), 4 (only-frontier), 5 (memorize regression), 6 (page anchors) verified correct. Note: the iter31 test test_fresh_from_start_starts_at_fatihah / test_fresh_from_end_starts_at_naas check the MEMORIZE-day behavior for fresh students (which correctly starts at الفاتحة 1 / الناس 1) — that is separate from review-day behavior which iter32 specifies must be empty for fresh students. Both can coexist.",
+  "rca of the issue": "The iter32 review-precision builder at server.py:6210-6258 is otherwise correct. The single failing scenario is caused by the unconditional frontier fallback block:\n```python\nif not review_segments and cur_sn:\n    fallback_to = max(1, next_start - 1)\n    review_segments.append({\"name\": cur_sn, \"number\": cur_num, \"from_ayah\": 1, \"to_ayah\": fallback_to})\n```\nFor a fresh student get_position_summary returns cur_sn=الفاتحة (default for from_start direction) and next_start=1, so fallback_to=max(1, 0)=1 → review_segments[0] becomes {name:'الفاتحة', from:1, to:1}. This is exactly the 'default to الفاتحة' anti-pattern the iter32 spec eliminates.\n\nReproduction: create a student with zero memorization_progress records, call POST /api/teacher/weekly-plans/suggest with direction='from_start'. All review-kind days will show الفاتحة 1-1.\n\nMitigation: gate the fallback on `next_start > 1` (proof the student has at least one ayah on the frontier) OR on `pos['surah_count'] > 0`. After the fix, the existing empty-branch at server.py:6316-6325 will correctly emit the spec sentinel."
+}

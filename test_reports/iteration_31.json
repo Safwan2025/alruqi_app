@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 31 backend regression testing for POST /api/teacher/weekly-plans/suggest direction override. Created 8 new targeted tests covering all 7 spec cases (a–g): seeded student with surahs 1..25 + direction='from_start' correctly advances to الشعراء آية 1 (page 367); same student + 'from_end' returns 7-day plan gracefully without crash; صفوان (user_ccd8568d42ba) + 'from_start' continues at الأنعام آية 95 (not reset to الفاتحة 1); صفوان + 'from_end' continues from his lowest memorized surah (not reset to الناس); fresh student defaults correct (from_start→الفاتحة, from_end→الناس); no-override path still returns a valid frontier plan; and Madinah Mushaf page mapping is intact at all anchor verses including الشعراء=367. All 8 new tests PASS. Regression suite from iterations 28–30 (test_peer_cancel_and_weekly_suggest.py, test_peer_review_phase2.py, test_iter29_fixes.py): 45/46 pass. The 1 failure is in test_iter29_fixes.py::TestDirectionOverride::test_from_end_starts_high_surah_number which encodes the OLD (now-deprecated) behavior the user explicitly asked to fix in iter31 — it expects 'from_end' to reset to الناس for an existing student. This is NOT a code regression; it is a stale test that must be updated to the new spec by the main agent.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter31_direction_override.py",
+    "/app/test_reports/pytest/iter31_results.xml",
+    "/app/test_reports/pytest/iter31_regression.xml"
+  ],
+  "action_items": [
+    "Update obsolete test /app/backend/tests/test_iter29_fixes.py::TestDirectionOverride::test_from_end_starts_high_surah_number — it asserts the OLD behavior ('from_end' resets to الناس for a student who already has records). Per the iter31 correction, 'from_end' must now continue from the student's LOWEST memorized surah's next ayah, never reset. Suggested rewrite: assert that the first memorize day is NOT (الناس, ayah 1) AND that the surah corresponds to the student's actual frontier. The companion test_from_start_starts_low_surah_number happens to still pass only because STUDENT_A has minimal records — consider hardening it the same way (seed a controlled student or assert the frontier explicitly)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:6121-6178 — Direction override logic is correctly implemented: when override is given, recomputes frontier from memorized_surahs (max for from_start, min for from_end), queries memorization_progress for highest to_ayah on that frontier surah, sets next_start=highest_to+1, and ONLY falls back to fixed surahs (الفاتحة/الناس/النبأ) when student has zero records. Fresh-student fallback respects the override direction.",
+    "_advance() (server.py:6183-6196) handles surah-boundary crossing in both directions (from_start: cur_n+1; from_end: cur_n-1) — edge case of completed last surah is handled by returning the surah without advancing further.",
+    "Page mapping helper get_ayah_page() retains correct Madinah 604-page anchors (verified: 1:1=1, 4:1=77, 6:95=140, 26:1=367, 36:1=440, 78:1=582, 114:1=604).",
+    "Minor: in seeded test (a) the resulting first memorize day comes back as الشعراء 1-18 (18 ayahs/day calibrated by student's high attendance rate). Verify with main agent that ayahs_per_day=18 is intended for a brand-new test student with no attendance history (att_rate defaults to 100 → 'push' intensity)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter31_direction_override.py (new — 8 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 new iter31 tests pass; 45/46 prior-iteration regression — 1 stale test enforces obsolete behavior, not a code regression)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "Admin m0m0077100@gmail.com/admin_test_123; Student A test_dialog_user@test.com/test123456; Student B osama38os8@gmail.com/test123456 (from /app/memory/test_credentials.md). Seed cleanup automatic via pytest module-scoped fixture (deletes TEST_-prefixed users and memorization_progress records).",
+  "seed_data_creation": "Two temp users created and removed automatically per module fixture: (1) TEST_ prefixed student with all 25 surahs fully memorized (records inserted into memorization_progress with quality='ممتاز'); (2) TEST_ prefixed fresh student with zero memorization records. Both cleaned up at fixture teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The iter31 direction override behavior is correct and the spec is fully covered by /app/backend/tests/test_iter31_direction_override.py (8 cases). If reusing the test, set REACT_APP_BACKEND_URL via env or run from a shell that has loaded /app/frontend/.env. The stale test in test_iter29_fixes.py::test_from_end_starts_high_surah_number needs the main agent to rewrite for the new spec. صفوان's actual frontier values at time of test: top surah by number = الأنعام #6 (highest_to=94 → next_start=95); lowest surah = آل عمران #3 (highest_to=200, surah complete). For seeded 1..25 student, from_end frontier=الفاتحة already complete → _advance falls through to review-only days for the memorize slots (verified the response is still a valid 7-day plan).",
+  "rca of the issue": "Not a bug fix iteration — this is verification of an intentional behavior change (iter31 correction). RCA of the original behavior the user reported: previous override path reset cur_sn/cur_num to literal الفاتحة (#1) for 'from_start' or الناس (#114) for 'from_end' regardless of student history. The fix at server.py:6135-6161 keeps the frontier anchored to actual memorization records and only changes the traversal direction. All test scenarios confirm the corrected behavior."
+}

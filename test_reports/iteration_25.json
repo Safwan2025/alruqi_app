@@ -1,0 +1,65 @@
+{
+  "summary": "Phase 2 Competition Live Session: full backend pytest suite (5/5 passed) + Playwright E2E covering teacher start-live, student join with valid/invalid codes, waiting room polling, idempotent re-join, begin/end transitions, and regression of all teacher & student tabs. All flows working end-to-end.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Multiple Dialogs (CompetitionsManager edit/add-question, LiveWaitingRoomDialog, JoinCompetitionDialog)", "issues": ["Console warning: 'Missing Description or aria-describedby={undefined} for DialogContent' — add DialogDescription or aria-describedby for a11y compliance"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_competition_live.py",
+    "/app/test_reports/pytest/competition_live.xml"
+  ],
+  "action_items": [
+    "(Optional a11y) Add <DialogDescription> or aria-describedby to LiveWaitingRoomDialog, JoinCompetitionDialog, competition-form-dialog, question-dialog, preview-dialog to silence Radix DialogContent warnings."
+  ],
+  "critical_code_review_comments": [
+    "Backend live-session endpoints are well-structured (status guards waiting/in_progress/ended, idempotent join, host/admin gating).",
+    "_generate_unique_join_code retries up to 30x then 500s — fine for current scale; consider exponential backoff if collision rate ever grows.",
+    "Idempotent join correctly checks user_id presence before $push (no duplicates).",
+    "GET /competitions/live/{live_id} correctly authorises host/admin or joined participant only.",
+    "Frontend CompetitionsManager: tested testids present — create-comp-btn, comp-row-{cid}, open-{cid}, add-question-btn, save-question-btn, start-live-detail-btn, start-live-{cid} (list view button shows only when status=published in code).",
+    "Frontend LiveWaitingRoomDialog: code rendered LTR with tracking (verified visually); polls /competitions/live/{lid} every 3s — works.",
+    "JoinCompetitionDialog correctly conditionally renders join form (data-testid=join-competition-dialog) vs waiting room (student-waiting-room) based on session state.",
+    "Logout via GET /api/auth/logout doesn't exist; only POST. Not a bug, but worth ensuring no UI code uses GET."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_competition_live.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (5/5 pytest)",
+    "frontend": "100% (all E2E steps passed)"
+  },
+  "test_credentials": "Teacher: aalsiiada@gmail.com / teacher_test_123; Student: test_dialog_user@test.com / test123456",
+  "seed_data_creation": "All test competitions are auto-deleted at end of each test (cleanup via DELETE /api/competitions/{cid}). Test titles prefixed with TEST_LiveComp_ / TEST_LIVE_E2E_ / TEST_E2E_.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 2 live-session feature fully verified. Backend tests live in /app/backend/tests/test_competition_live.py covering: (1) start fails for unpublished comp, (2) start fails with zero questions, (3) students cannot start, (4) full happy flow with status transitions and error paths (invalid code, bad format, late join after begin, ended-session join), (5) student leave removes from participants. The E2E Playwright run validated UI: tab-competitions opens CompetitionsManager, create-comp/add-question/publish/start-live works, LiveWaitingRoomDialog shows 6-digit code (LTR) and polling-updated participants list. JoinCompetitionDialog shows the join form first (data-testid='join-competition-dialog') and transitions to data-testid='student-waiting-room' showing Hourglass 'في انتظار بدء المعلم...' + host name + participant. Question gameplay/scoring is out of scope and was NOT tested. Phase 3 (answering/scoring) is the next chunk of work.",
+  "verified_features": {
+    "tab-competitions visible & opens CompetitionsManager": "PASS",
+    "create competition + add question + publish via UI": "PASS",
+    "start-live (detail view) opens LiveWaitingRoomDialog with 6-digit code": "PASS (code=781571, 030577)",
+    "live-join-code, copy-join-code-btn, participants-count, participants-list testids": "PRESENT",
+    "Backend: start fails 400 'يجب نشر المسابقة أولاً' if not published": "PASS",
+    "Backend: start fails 400 'لا توجد أسئلة' if no questions": "PASS",
+    "Backend: student gets 403 'للمعلمين والمشرفين فقط' on start": "PASS",
+    "Backend: join with 'abc' returns 400 'الكود يجب أن يكون 6 أرقام'": "PASS",
+    "Backend: join with wrong 6-digit code returns 404 'الكود غير صحيح'": "PASS",
+    "UI: invalid 6-digit code shows toast 'الكود غير صحيح'": "PASS",
+    "Student valid join -> waiting room with Hourglass + 'في انتظار بدء المعلم...' + host name 'البراء السيدا'": "PASS",
+    "Idempotent join (count remains 1)": "PASS",
+    "Backend: begin with zero participants -> 400 'لا يوجد طلاب منضمون بعد'": "PASS",
+    "Backend: begin -> status=in_progress, started_at set": "PASS",
+    "Backend: join after begin -> 400 'المسابقة بدأت بالفعل، لا يمكن الانضمام الآن'": "PASS",
+    "Backend: end -> status=ended; join after end -> 400 'هذه الجلسة منتهية'": "PASS",
+    "Backend: student leave removes from participants": "PASS",
+    "Arabic RTL: dialogs render properly, code displayed LTR with tracking": "PASS (verified visually in screenshot)",
+    "Regression - teacher tabs (sessions/students/competitions/memorization/notes-ratings/messages/tools)": "ALL PRESENT & CLICKABLE",
+    "Regression - student tabs (home/progress/notes/messages/commitment) + join-competition-btn": "ALL PRESENT"
+  }
+}
