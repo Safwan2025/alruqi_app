@@ -185,6 +185,12 @@ class Session(BaseModel):
     attendance_confirmed_at: Optional[datetime] = None
     rating: Optional[str] = None  # ضعيف، مقبول، متوسط، ممتاز
     teacher_notes: Optional[str] = None
+    # Cancellation metadata — exposed so the UI can display the reason and
+    # (for auto-cancelled sessions) render the "تحويل إلى مكتملة" restore button.
+    cancellation_reason: Optional[str] = None
+    cancelled_by: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
+    auto_cancelled_at: Optional[datetime] = None
     created_at: datetime
 
 class SessionRating(BaseModel):
@@ -1635,6 +1641,142 @@ async def get_teacher_available_slots(teacher_id: str):
 
 # ===== SESSION/BOOKING ENDPOINTS =====
 
+# ---------------------------------------------------------------------------
+# Auto-cancel helper (lazy cleanup — no scheduler dependency)
+# ---------------------------------------------------------------------------
+#
+# Rule (as agreed with product): any session that is still in status
+# "scheduled" more than 90 minutes AFTER its scheduled_time, and never had
+# attendance confirmed / never was completed / never was cancelled, is
+# considered stale and MUST be auto-cancelled so it stops blocking the
+# student's ability to book a new session.
+#
+# Storage — we intentionally reuse existing fields (no schema migration):
+#   status                       -> "cancelled"
+#   cancellation_reason          -> "auto_cancelled_no_attendance"
+#   cancelled_by                 -> "system"
+#   cancelled_at                 -> iso timestamp
+#   auto_cancelled_at            -> iso timestamp (marker to detect this case)
+#   auto_cancel_notifications_sent -> True (double-safety against re-notify)
+#
+# The transition is atomic (find_one_and_update with filter status=scheduled)
+# so concurrent endpoint calls cannot double-cancel the same session or
+# duplicate notifications.
+#
+# Notifications go to: the student, the teacher, and the admin (single row
+# marked with user_id="admin").
+# ---------------------------------------------------------------------------
+
+AUTO_CANCEL_REASON = "auto_cancelled_no_attendance"
+
+
+async def _auto_cancel_expired_sessions(student_id: Optional[str] = None,
+                                       teacher_id: Optional[str] = None) -> int:
+    """
+    Atomically flip every stale scheduled session to cancelled and emit
+    one-time notifications. Returns the number of sessions cancelled.
+
+    - If student_id is given, only that student's sessions are considered.
+    - If teacher_id is given, only that teacher's sessions are considered.
+    - If neither is given, all users are scanned (used by admin dashboards).
+
+    The atomic update guarantees the notifications are emitted exactly once
+    per session, no matter how many endpoints call this helper in parallel.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff_iso = (now - timedelta(minutes=90)).isoformat()
+
+    match = {
+        "status": "scheduled",
+        "scheduled_time": {"$lt": cutoff_iso},
+        # attendance_confirmed may be missing OR None -> treat both as "not confirmed"
+        "$or": [
+            {"attendance_confirmed": None},
+            {"attendance_confirmed": {"$exists": False}},
+        ],
+    }
+    if student_id:
+        match["student_id"] = student_id
+    if teacher_id:
+        match["teacher_id"] = teacher_id
+
+    cancelled_count = 0
+    now_iso = now.isoformat()
+
+    while True:
+        # find_one_and_update is atomic: only the first caller wins for each
+        # session document, later callers get no more matches.
+        doc = await db.sessions.find_one_and_update(
+            match,
+            {"$set": {
+                "status": "cancelled",
+                "cancellation_reason": AUTO_CANCEL_REASON,
+                "cancelled_by": "system",
+                "cancelled_at": now_iso,
+                "auto_cancelled_at": now_iso,
+                "auto_cancel_notifications_sent": True,
+            }},
+            projection={"_id": 0},
+            return_document=True,  # return the updated doc so we can notify
+        )
+        if not doc:
+            break
+        cancelled_count += 1
+
+        sid = doc.get("session_id")
+        s_id = doc.get("student_id")
+        t_id = doc.get("teacher_id")
+        s_name = doc.get("student_name", "الطالب")
+        t_name = doc.get("teacher_name", "المعلم")
+        try:
+            sched = datetime.fromisoformat(str(doc.get("scheduled_time", "")).replace('Z', '+00:00'))
+            sched_str = sched.strftime('%Y-%m-%d %H:%M')
+        except Exception:
+            sched_str = doc.get("scheduled_time", "")
+
+        message = (
+            f"تم إلغاء الحصة تلقائياً للطالب {s_name} مع المعلم {t_name} "
+            f"(بتاريخ {sched_str})، لأنها لم تبدأ / لم يتم تأكيد حضورها خلال 90 دقيقة من موعدها."
+        )
+        title = "إلغاء تلقائي للحصة بسبب عدم الحضور"
+
+        # Fan-out notifications (student, teacher, admin) — each is a
+        # single insert with related_session_id, so we can also cross-check
+        # if a later code path ever tries to re-notify.
+        base_notif = {
+            "type": "session_auto_cancelled",
+            "title": title,
+            "message": message,
+            "related_session_id": sid,
+            "read": False,
+            "created_at": now_iso,
+        }
+        try:
+            if s_id:
+                await db.notifications.insert_one(
+                    {"notification_id": f"notif_{uuid.uuid4().hex[:12]}",
+                     "user_id": s_id, **base_notif}
+                )
+            if t_id:
+                await db.notifications.insert_one(
+                    {"notification_id": f"notif_{uuid.uuid4().hex[:12]}",
+                     "user_id": t_id, **base_notif}
+                )
+            # Admin row — user_id="admin" is a bucket already used elsewhere
+            # for admin-facing notifications. If the platform ever adds a
+            # real admin user, this row is still discoverable via the
+            # notification query by type="session_auto_cancelled".
+            await db.notifications.insert_one(
+                {"notification_id": f"notif_{uuid.uuid4().hex[:12]}",
+                 "user_id": "admin", **base_notif}
+            )
+        except Exception as exc:
+            # Notifications must never break the cleanup; log & continue.
+            logger.warning(f"[auto_cancel] notif insert failed for {sid}: {exc}")
+
+    return cancelled_count
+
+
 @api_router.get("/student/active-booking")
 async def get_student_active_booking(current_user: User = Depends(get_current_user)):
     """
@@ -1642,11 +1784,21 @@ async def get_student_active_booking(current_user: User = Depends(get_current_us
     can pre-emptively block the "احجز حصة" flow instead of waiting for a 409
     from POST /sessions/book.
 
-    Definition of "active" is identical to the check inside book_session():
-    status == "scheduled" AND scheduled_time > now - 90 minutes.
+    UPDATED (Jan 2026): before evaluating "active", we FIRST run the
+    lazy auto-cancel cleanup for this student. This guarantees that stale
+    scheduled sessions (>90 min past with no attendance) can never
+    perpetually block bookings.
+
+    Final definition of "active":
+        status == "scheduled"
+        AND scheduled_time > now - 90 minutes
+        (auto-cancelled sessions have status="cancelled" so they never match).
     """
     if current_user.role != "student":
         return {"has_active_booking": False, "session": None}
+
+    # Lazy cleanup — atomic, safe to call on every request.
+    await _auto_cancel_expired_sessions(student_id=current_user.user_id)
 
     now_utc = datetime.now(timezone.utc)
     cutoff = now_utc - timedelta(minutes=90)
@@ -1751,7 +1903,11 @@ async def book_session(
     if not teacher:
         raise HTTPException(status_code=404, detail="Teacher not found")
 
-    # ===== P1: Prevent double-booking =====
+    # ===== P1 + Auto-Cancel: Prevent double-booking =====
+    # First run lazy cleanup so stale scheduled sessions (>90 min past with
+    # no attendance) don't perpetually block the student from booking.
+    await _auto_cancel_expired_sessions(student_id=current_user.user_id)
+
     # A student may not book a new session while they already have an ACTIVE
     # booking. An "active" booking is one with status="scheduled" whose
     # scheduled_time is still within the visible window (session start + 90 min),
@@ -2288,6 +2444,82 @@ async def cancel_session(
     })
     
     return {"message": "Session cancelled successfully", "cancelled_by": cancelled_by}
+
+
+@api_router.put("/sessions/{session_id}/restore-completed")
+async def restore_auto_cancelled_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Manual override for the teacher OR the admin: if a session was
+    auto-cancelled by the 90-minute cleanup but the student actually
+    attended (e.g. teacher forgot to confirm attendance in time, technical
+    glitch, offline confirmation), restore it to "completed" so the
+    evaluation flow becomes available again.
+
+    Rules:
+      - Only the teacher who owns the session OR the admin can call this.
+      - Only sessions where cancellation_reason == "auto_cancelled_no_attendance"
+        can be restored. Manually-cancelled sessions cannot be silently
+        re-opened via this endpoint (they must be re-booked instead).
+      - The restore sets status="completed" AND attendance_confirmed=true
+        so the existing evaluation UI (SessionNotesDialog / student profile)
+        works with the session immediately, without any special-casing.
+    """
+    session = await db.sessions.find_one({"session_id": session_id}, {"_id": 0})
+    if not session:
+        raise HTTPException(status_code=404, detail="الجلسة غير موجودة")
+
+    is_teacher_of_session = current_user.user_id == session.get("teacher_id")
+    is_admin = current_user.email == ADMIN_EMAIL
+    if not (is_teacher_of_session or is_admin):
+        raise HTTPException(status_code=403, detail="غير مصرح لك بتعديل هذه الحصة")
+
+    if session.get("cancellation_reason") != AUTO_CANCEL_REASON:
+        raise HTTPException(
+            status_code=400,
+            detail="لا يمكن استعادة إلا الحصص التي أُلغيت تلقائياً بسبب عدم الحضور."
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.sessions.update_one(
+        {"session_id": session_id},
+        {"$set": {
+            "status": "completed",
+            "attendance_confirmed": True,
+            "attendance_confirmed_at": now_iso,
+            "attendance_confirmed_by": current_user.user_id,
+            "restored_from_auto_cancel_at": now_iso,
+            "restored_from_auto_cancel_by": current_user.user_id,
+        },
+         # Clear the auto-cancel markers so the session stops rendering the
+         # "auto-cancelled" badge in the UI.
+         "$unset": {
+             "cancellation_reason": "",
+             "cancelled_by": "",
+             "cancelled_at": "",
+             "auto_cancelled_at": "",
+         }}
+    )
+
+    # Notify the student that the record was corrected.
+    try:
+        await db.notifications.insert_one({
+            "notification_id": f"notif_{uuid.uuid4().hex[:12]}",
+            "user_id": session.get("student_id"),
+            "type": "session_restored",
+            "title": "تم تعديل حالة الحصة",
+            "message": f"تم تحويل حصتك مع {session.get('teacher_name', 'المعلم')} إلى مكتملة بعد تصحيح الحالة يدوياً.",
+            "related_session_id": session_id,
+            "read": False,
+            "created_at": now_iso,
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[restore] notif failed for {session_id}: {exc}")
+
+    return {"message": "تم تحويل الحصة إلى مكتملة", "session_id": session_id}
+
 
 @api_router.delete("/sessions/{session_id}/hide")
 async def hide_session(
@@ -5497,6 +5729,7 @@ async def get_student_full_profile(
             "teacher_name": teacher_info.get("name") if teacher_info else "غير معروف",
             "cancellation_reason": s.get("cancellation_reason"),
             "cancelled_by": s.get("cancelled_by"),
+            "auto_cancelled_at": s.get("auto_cancelled_at"),
             "join_clicked_at": s.get("join_clicked_at"),
             "attendance_confirmed": s.get("attendance_confirmed"),
             "attendance_confirmed_at": s.get("attendance_confirmed_at")

@@ -246,6 +246,20 @@ const handleTeacherJoinSession = async (session) => {
     }
   };
 
+  // Restore an auto-cancelled session to completed. Only permitted by
+  // backend for sessions with cancellation_reason == "auto_cancelled_no_attendance",
+  // and only for the session's teacher or admin. After success we refresh
+  // the sessions list so the badge and buttons update.
+  const handleRestoreAutoCancelled = async (sessionId) => {
+    try {
+      await api.put(`/sessions/${sessionId}/restore-completed`);
+      toast.success('تم تحويل الحصة إلى مكتملة');
+      await loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'فشل تعديل حالة الحصة');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -535,12 +549,37 @@ const handleTeacherJoinSession = async (session) => {
                           <div className="flex-1">
                             <h4 className="font-amiri text-lg font-bold text-red-600 mb-1">حصة ملغاة مع {session.student_name}</h4>
                             <p className="font-plex text-sm text-muted-foreground">{new Date(session.scheduled_time).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                            {session.cancellation_reason && (<p className="font-plex text-xs text-red-500">السبب: {session.cancellation_reason}</p>)}
-                            {session.cancelled_by && (<p className="font-plex text-xs text-gray-500">ملغى بواسطة: {session.cancelled_by === 'teacher' ? 'المعلم' : 'الطالب'}</p>)}
+                            {session.cancellation_reason === 'auto_cancelled_no_attendance' ? (
+                              <p className="font-plex text-xs text-orange-600 mt-1" data-testid={`auto-cancel-note-${session.session_id}`}>
+                                أُلغيت تلقائياً بسبب عدم تأكيد الحضور خلال 90 دقيقة من موعدها.
+                              </p>
+                            ) : (
+                              <>
+                                {session.cancellation_reason && (<p className="font-plex text-xs text-red-500">السبب: {session.cancellation_reason}</p>)}
+                                {session.cancelled_by && (<p className="font-plex text-xs text-gray-500">ملغى بواسطة: {session.cancelled_by === 'teacher' ? 'المعلم' : 'الطالب'}</p>)}
+                              </>
+                            )}
                           </div>
-                          <Button variant="outline" size="sm" onClick={() => hideSession(session.session_id)} disabled={hidingSessionId === session.session_id} className="rounded-full border-red-300 text-red-600 hover:bg-red-100" data-testid={`hide-session-${session.session_id}`}>
-                            {hidingSessionId === session.session_id ? <div className="spinner border-2 border-red-500 border-t-transparent rounded-full w-4 h-4"></div> : <><Trash2 className="ml-1" size={14} />إخفاء</>}
-                          </Button>
+                          <div className="flex gap-2 flex-wrap">
+                            {/* Restore auto-cancelled → completed. Backend enforces
+                                cancellation_reason=="auto_cancelled_no_attendance" and
+                                only allows the session's teacher or admin. */}
+                            {session.cancellation_reason === 'auto_cancelled_no_attendance' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                data-testid={`restore-session-${session.session_id}`}
+                                onClick={() => handleRestoreAutoCancelled(session.session_id)}
+                                className="rounded-full border-emerald-500 text-emerald-600 hover:bg-emerald-50"
+                              >
+                                <Check className="ml-1" size={14} />
+                                تحويل إلى مكتملة
+                              </Button>
+                            )}
+                            <Button variant="outline" size="sm" onClick={() => hideSession(session.session_id)} disabled={hidingSessionId === session.session_id} className="rounded-full border-red-300 text-red-600 hover:bg-red-100" data-testid={`hide-session-${session.session_id}`}>
+                              {hidingSessionId === session.session_id ? <div className="spinner border-2 border-red-500 border-t-transparent rounded-full w-4 h-4"></div> : <><Trash2 className="ml-1" size={14} />إخفاء</>}
+                            </Button>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>

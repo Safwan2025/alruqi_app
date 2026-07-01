@@ -153,6 +153,19 @@ const StudentProfileModal = ({ open, onClose, studentId, studentName, isAdmin = 
     }
   };
 
+  // Restore an auto-cancelled session to completed status. This is only
+  // allowed for sessions that were auto-cancelled by the 90-minute cleanup
+  // (backend enforces cancellation_reason == "auto_cancelled_no_attendance").
+  const handleRestoreCompleted = async (sessionId) => {
+    try {
+      await api.put(`/sessions/${sessionId}/restore-completed`);
+      toast.success('تم تحويل الحصة إلى مكتملة');
+      loadProfile();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'فشل تعديل حالة الحصة');
+    }
+  };
+
   if (!open) return null;
 
   return (
@@ -476,7 +489,17 @@ const StudentProfileModal = ({ open, onClose, studentId, studentName, isAdmin = 
                                 <Star size={10} /> تم التقييم
                               </span>
                             )}
-                            {session.status === 'cancelled' && session.cancellation_reason && (
+                            {/* Auto-cancel badge (system-cancelled by 90-min cleanup). */}
+                            {session.status === 'cancelled' && session.cancellation_reason === 'auto_cancelled_no_attendance' && (
+                              <span
+                                className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700"
+                                data-testid={`auto-cancel-badge-${session.session_id}`}
+                                title="أُلغيت تلقائياً بسبب عدم تأكيد الحضور خلال 90 دقيقة"
+                              >
+                                <XCircle size={10} /> أُلغيت تلقائياً
+                              </span>
+                            )}
+                            {session.status === 'cancelled' && session.cancellation_reason && session.cancellation_reason !== 'auto_cancelled_no_attendance' && (
                               <span className="text-[10px] text-red-500">{session.cancellation_reason}</span>
                             )}
                           </div>
@@ -519,6 +542,22 @@ const StudentProfileModal = ({ open, onClose, studentId, studentName, isAdmin = 
                               >
                                 <FileText size={12} className="ml-0.5" />
                                 {session.rating ? 'تعديل التقييم' : 'تقييم'}
+                              </Button>
+                            )}
+                            {/* Restore auto-cancelled → completed (teacher/admin override).
+                                Only shown for sessions the 90-min cleanup marked as
+                                auto_cancelled_no_attendance. Backend enforces the same
+                                condition and only allows the session's teacher or admin. */}
+                            {session.status === 'cancelled' && session.cancellation_reason === 'auto_cancelled_no_attendance' && (
+                              <Button
+                                data-testid={`profile-restore-${session.session_id}`}
+                                onClick={() => handleRestoreCompleted(session.session_id)}
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-xs rounded-full border-emerald-500 text-emerald-600 hover:bg-emerald-50"
+                              >
+                                <Check size={12} className="ml-0.5" />
+                                تحويل إلى مكتملة
                               </Button>
                             )}
                           </div>

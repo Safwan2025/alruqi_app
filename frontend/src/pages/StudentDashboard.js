@@ -460,7 +460,13 @@ const handleJoinSession = async (session) => {
                           <div className="flex-1">
                             <h4 className="font-amiri text-lg font-bold text-red-600 mb-1">حصة ملغاة مع {session.teacher_name}</h4>
                             <p className="font-plex text-sm text-muted-foreground">{new Date(session.scheduled_time).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</p>
-                            {session.cancellation_reason && (<p className="font-plex text-xs text-red-500">السبب: {session.cancellation_reason}</p>)}
+                            {session.cancellation_reason === 'auto_cancelled_no_attendance' ? (
+                              <p className="font-plex text-xs text-orange-600 mt-1" data-testid={`auto-cancel-note-${session.session_id}`}>
+                                أُلغيت تلقائياً بسبب عدم تأكيد الحضور خلال 90 دقيقة من موعدها.
+                              </p>
+                            ) : session.cancellation_reason ? (
+                              <p className="font-plex text-xs text-red-500">السبب: {session.cancellation_reason}</p>
+                            ) : null}
                           </div>
                           <Button variant="outline" size="sm" onClick={() => hideSession(session.session_id)} disabled={hidingSessionId === session.session_id} className="rounded-full border-red-300 text-red-600 hover:bg-red-100" data-testid={`hide-session-${session.session_id}`}>
                             {hidingSessionId === session.session_id ? <div className="spinner border-2 border-red-500 border-t-transparent rounded-full w-4 h-4"></div> : <><Trash2 className="ml-1" size={14} />إخفاء</>}
