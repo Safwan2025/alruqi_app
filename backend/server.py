@@ -1634,6 +1634,87 @@ async def get_teacher_available_slots(teacher_id: str):
     return future_slots
 
 # ===== SESSION/BOOKING ENDPOINTS =====
+
+@api_router.get("/student/active-booking")
+async def get_student_active_booking(current_user: User = Depends(get_current_user)):
+    """
+    P1 helper — return the student's ACTIVE booking (if any), so the frontend
+    can pre-emptively block the "احجز حصة" flow instead of waiting for a 409
+    from POST /sessions/book.
+
+    Definition of "active" is identical to the check inside book_session():
+    status == "scheduled" AND scheduled_time > now - 90 minutes.
+    """
+    if current_user.role != "student":
+        return {"has_active_booking": False, "session": None}
+
+    now_utc = datetime.now(timezone.utc)
+    cutoff = now_utc - timedelta(minutes=90)
+    cursor = db.sessions.find(
+        {
+            "student_id": current_user.user_id,
+            "status": "scheduled",
+            "scheduled_time": {"$gt": cutoff.isoformat()},
+        },
+        {"_id": 0}
+    ).sort("scheduled_time", 1)
+    docs = await cursor.to_list(length=1)
+    if not docs:
+        return {"has_active_booking": False, "session": None}
+    s = docs[0]
+    return {
+        "has_active_booking": True,
+        "session": {
+            "session_id": s.get("session_id"),
+            "teacher_id": s.get("teacher_id"),
+            "teacher_name": s.get("teacher_name"),
+            "scheduled_time": s.get("scheduled_time"),
+            "status": s.get("status"),
+            "duration": s.get("duration"),
+        },
+    }
+
+
+@api_router.get("/public/teachers-slots-counts")
+async def get_teachers_available_slots_counts():
+    """
+    P2 — return a map of {teacher_id: available_future_slot_count} so the
+    Teachers list page can render a status badge (available / not available)
+    next to each teacher WITHOUT firing N+1 requests.
+
+    A slot is "available" when is_available == True AND scheduled_time is in
+    the future. Public endpoint (no auth) so the marketing/teachers page can
+    call it before the user logs in.
+
+    NOTE: the path is under /public/ to avoid the /teachers/{teacher_id}
+    dynamic route registered earlier (which would otherwise capture this URL
+    with teacher_id="available-slots-counts").
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # Single aggregation → O(1) round-trip
+    pipeline = [
+        {
+            "$match": {
+                "is_available": True,
+                "scheduled_time": {"$gt": now_iso},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$teacher_id",
+                "count": {"$sum": 1},
+            }
+        },
+    ]
+    result_cursor = db.available_slots.aggregate(pipeline)
+    counts = {}
+    async for row in result_cursor:
+        tid = row.get("_id")
+        if tid:
+            counts[tid] = int(row.get("count", 0))
+    return {"counts": counts}
+
+
 @api_router.post("/sessions/book", response_model=Session)
 async def book_session(
     booking: SessionCreate,
@@ -1669,7 +1750,52 @@ async def book_session(
     
     if not teacher:
         raise HTTPException(status_code=404, detail="Teacher not found")
-    
+
+    # ===== P1: Prevent double-booking =====
+    # A student may not book a new session while they already have an ACTIVE
+    # booking. An "active" booking is one with status="scheduled" whose
+    # scheduled_time is still within the visible window (session start + 90 min),
+    # mirroring the 90-minute visibility rule used in /sessions/my-sessions and
+    # StudentDashboard's isSessionVisibleActive. Once the window passes OR the
+    # session is cancelled/completed, the student is free to book again.
+    now_utc = datetime.now(timezone.utc)
+    active_window_cutoff = now_utc - timedelta(minutes=90)
+    existing_active_cursor = db.sessions.find(
+        {
+            "student_id": current_user.user_id,
+            "status": "scheduled",
+            "scheduled_time": {"$gt": active_window_cutoff.isoformat()},
+        },
+        {"_id": 0}
+    ).sort("scheduled_time", 1)
+    existing_active = await existing_active_cursor.to_list(length=5)
+    if existing_active:
+        # Prefer the earliest still-active session for a clear message.
+        active_session = existing_active[0]
+        try:
+            active_time = datetime.fromisoformat(active_session["scheduled_time"].replace('Z', '+00:00'))
+            active_time_str = active_time.strftime('%Y-%m-%d %H:%M')
+        except Exception:
+            active_time_str = active_session.get("scheduled_time", "")
+        active_teacher_name = active_session.get("teacher_name", "معلمك")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": (
+                    f"لديك حصة محجوزة بالفعل مع {active_teacher_name} بتاريخ {active_time_str}. "
+                    f"لا يمكنك حجز حصة جديدة حتى تحضر الحصة الحالية أو يتم إلغاؤها."
+                ),
+                "reason": "active_booking_exists",
+                "active_session": {
+                    "session_id": active_session.get("session_id"),
+                    "teacher_id": active_session.get("teacher_id"),
+                    "teacher_name": active_teacher_name,
+                    "scheduled_time": active_session.get("scheduled_time"),
+                    "status": active_session.get("status"),
+                },
+            },
+        )
+
     # Check if slot is on a vacation day
     booking_date = booking.scheduled_time.strftime("%Y-%m-%d")
     vacation = await db.vacation_days.find_one({

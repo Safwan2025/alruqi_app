@@ -40,6 +40,8 @@ import MessageInbox from '@/components/MessageInbox';
 import CompetitionsManager from '@/components/CompetitionsManager';
 import PeerRequestsManager from '@/components/PeerRequestsManager';
 import CertificatesManager from '@/components/CertificatesManager';
+import JoinFallbackDialog from '@/components/JoinFallbackDialog';
+import { openMeetLoadingTab, normalizeMeetUrl } from '@/utils/openMeetTab';
 
 const ADMIN_EMAIL = "m0m0077100@gmail.com";
 
@@ -69,6 +71,7 @@ const TeacherDashboard = () => {
   const [activeTab, setActiveTab] = useState('sessions');
   const [composeTarget, setComposeTarget] = useState(null);
   const [pendingRefreshKey, setPendingRefreshKey] = useState(0);
+  const [joinFallback, setJoinFallback] = useState({ open: false, link: '', error: '' });
 
   useEffect(() => {
     loadData();
@@ -154,73 +157,39 @@ const TeacherDashboard = () => {
   //   } catch { toast.error('فشل في فتح رابط الحصة'); }
   // };
 
-  const normalizeUrl = (url) => {
-  if (!url) return '';
-  const trimmed = url.trim();
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
-  return 'https://' + trimmed;
-};
+  const normalizeUrl = normalizeMeetUrl;
 
 const handleTeacherJoinSession = async (session) => {
-  /* iPhone/Safari popup-blocker fix — see StudentDashboard.handleJoinSession
-     for the full rationale. Safari only honours `window.open(...)` when it
-     happens synchronously inside the user-gesture; after `await` the
-     gesture token is gone. We pre-open a blank tab here and redirect it
-     once the meet link is fetched, with sensible fallbacks. */
-  /* IMPORTANT: do NOT pass 'noopener,noreferrer' here.
-     Those features sever the JS reference to the new tab, which means
-     `preOpenedWin.location.href = link` later becomes a no-op and Safari
-     leaves the teacher staring at a blank tab. Open with no features so
-     we keep a live handle to the tab. */
-  let preOpenedWin = null;
-  try {
-    preOpenedWin = window.open('about:blank', '_blank');
-  } catch (_) { preOpenedWin = null; }
+  /* Mobile-safe join flow — same rationale as
+     StudentDashboard.handleJoinSession and utils/openMeetTab.js.
+     We inject Arabic loading/ready/error HTML into the new tab so the
+     teacher never lands on about:blank and Google Meet is opened via a
+     real anchor click carrying a fresh user gesture (avoids the "Install
+     Meet" landing page on Android/iOS). */
+  const tab = openMeetLoadingTab();
 
   try {
     const response = await api.get(`/sessions/${session.session_id}/join-link`);
     const link = normalizeUrl(response.data?.recitation_link);
 
     if (!link) {
-      if (preOpenedWin && !preOpenedWin.closed) preOpenedWin.close();
-      toast.error('لم يتم تعيين رابط الحصة بعد');
+      const msg = 'لم يتم تعيين رابط الحصة بعد.';
+      if (tab.wasOpened) tab.showError(msg);
+      else setJoinFallback({ open: true, link: '', error: msg });
+      toast.error(msg);
       return;
     }
 
-    if (preOpenedWin && !preOpenedWin.closed) {
-      preOpenedWin.location.href = link;
+    if (tab.wasOpened) {
+      tab.showReady(link);
     } else {
-      const a = document.createElement('a');
-      a.href = link;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      toast.success(
-        (t) => (
-          <span>
-            إذا لم تُفتح الحصة تلقائيًا، {' '}
-            <a
-              href={link}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => toast.dismiss(t.id)}
-              style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: 600 }}
-            >
-              اضغط هنا للدخول
-            </a>
-          </span>
-        ),
-        { duration: 8000 }
-      );
+      setJoinFallback({ open: true, link, error: '' });
     }
   } catch (error) {
-    if (preOpenedWin && !preOpenedWin.closed) preOpenedWin.close();
-    toast.error(error.response?.data?.detail || 'فشل في فتح رابط الحصة');
+    const detail = error.response?.data?.detail || 'فشل في فتح رابط الحصة';
+    if (tab.wasOpened) tab.showError(detail);
+    else setJoinFallback({ open: true, link: '', error: detail });
+    toast.error(detail);
   }
 };
 
@@ -873,6 +842,12 @@ const handleTeacherJoinSession = async (session) => {
 
       <StudentProfileModal open={studentProfileDialog.open} onClose={() => setStudentProfileDialog({ open: false, studentId: null, studentName: null })} studentId={studentProfileDialog.studentId} studentName={studentProfileDialog.studentName} isAdmin={isAdmin} />
       <SetPasswordDialog open={showSetPasswordDialog} onClose={() => setShowSetPasswordDialog(false)} onSuccess={() => loadData()} />
+      <JoinFallbackDialog
+        open={joinFallback.open}
+        onClose={() => setJoinFallback({ open: false, link: '', error: '' })}
+        link={joinFallback.link}
+        errorMessage={joinFallback.error}
+      />
     </div>
   );
 };

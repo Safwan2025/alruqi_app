@@ -16,6 +16,7 @@ import CompetitionHistoryList from './CompetitionHistoryList';
 import WeeklyPlanBuilder from './WeeklyPlanBuilder';
 import PeerReviewStatsDialog from './PeerReviewStatsDialog';
 import { generateStudentReport } from '@/utils/generateStudentReport';
+import SessionNotesDialog from './SessionNotesDialog';
 
 // Rating colors
 const RATING_COLORS = {
@@ -101,6 +102,11 @@ const StudentProfileModal = ({ open, onClose, studentId, studentName, isAdmin = 
   const [weeklyPlanOpen, setWeeklyPlanOpen] = useState(false);
   const [peerStatsOpen, setPeerStatsOpen] = useState(false);
   const [peerOverview, setPeerOverview] = useState(null);
+  // P3: session evaluation dialog — opened from any past session inside the
+  // student profile. Uses the exact same SessionNotesDialog that the
+  // teacher dashboard uses (which contains the attendance-vs-evaluation
+  // separation fix and the "no memorization_entries on absence" fix).
+  const [evalDialog, setEvalDialog] = useState({ open: false, session: null });
 
   useEffect(() => {
     if (!open || !studentId) return;
@@ -465,34 +471,57 @@ const StudentProfileModal = ({ open, onClose, studentId, studentName, isAdmin = 
                                 <XCircle size={10} /> غائب
                               </span>
                             )}
+                            {session.rating && (
+                              <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                                <Star size={10} /> تم التقييم
+                              </span>
+                            )}
                             {session.status === 'cancelled' && session.cancellation_reason && (
                               <span className="text-[10px] text-red-500">{session.cancellation_reason}</span>
                             )}
                           </div>
-                          {session.status !== 'cancelled' && session.attendance_confirmed == null && (
-                            <div className="flex gap-1">
+                          <div className="flex gap-1 flex-wrap">
+                            {session.status !== 'cancelled' && session.attendance_confirmed == null && (
+                              <>
+                                <Button
+                                  data-testid={`profile-attend-${session.session_id}`}
+                                  onClick={() => handleConfirmAttendance(session.session_id, true)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs rounded-full border-green-400 text-green-600 hover:bg-green-50"
+                                >
+                                  <Check size={12} className="ml-0.5" />
+                                  حاضر
+                                </Button>
+                                <Button
+                                  data-testid={`profile-absent-${session.session_id}`}
+                                  onClick={() => handleConfirmAttendance(session.session_id, false)}
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs rounded-full border-red-400 text-red-600 hover:bg-red-50"
+                                >
+                                  <XCircle size={12} className="ml-0.5" />
+                                  غائب
+                                </Button>
+                              </>
+                            )}
+                            {/* P3: evaluate at any time — uses the same SessionNotesDialog which
+                                internally handles attendance-vs-evaluation and skips
+                                memorization_entries on absence. Button label reflects whether the
+                                session already has a rating. */}
+                            {session.status !== 'cancelled' && (
                               <Button
-                                data-testid={`profile-attend-${session.session_id}`}
-                                onClick={() => handleConfirmAttendance(session.session_id, true)}
+                                data-testid={`profile-evaluate-${session.session_id}`}
+                                onClick={() => setEvalDialog({ open: true, session })}
                                 variant="outline"
                                 size="sm"
-                                className="h-7 px-2 text-xs rounded-full border-green-400 text-green-600 hover:bg-green-50"
+                                className="h-7 px-2 text-xs rounded-full border-amber-500 text-amber-600 hover:bg-amber-50"
                               >
-                                <Check size={12} className="ml-0.5" />
-                                حاضر
+                                <FileText size={12} className="ml-0.5" />
+                                {session.rating ? 'تعديل التقييم' : 'تقييم'}
                               </Button>
-                              <Button
-                                data-testid={`profile-absent-${session.session_id}`}
-                                onClick={() => handleConfirmAttendance(session.session_id, false)}
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-xs rounded-full border-red-400 text-red-600 hover:bg-red-50"
-                              >
-                                <XCircle size={12} className="ml-0.5" />
-                                غائب
-                              </Button>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -599,6 +628,25 @@ const StudentProfileModal = ({ open, onClose, studentId, studentName, isAdmin = 
           peerOverview={peerOverview}
           studentName={profile?.student?.name}
           studentId={studentId}
+        />
+
+        {/* P3: Session evaluation dialog (opened from any session inside the
+            student profile). We reuse SessionNotesDialog verbatim so we
+            preserve the attendance-vs-evaluation separation and the
+            absence-skips-memorization-entries logic.
+
+            The recent_sessions payload does not carry student_name, so we
+            inject it here from the modal props for a correct dialog title. */}
+        <SessionNotesDialog
+          open={evalDialog.open}
+          onClose={() => setEvalDialog({ open: false, session: null })}
+          session={evalDialog.session ? {
+            ...evalDialog.session,
+            student_id: evalDialog.session.student_id || studentId,
+            student_name: evalDialog.session.student_name || studentName || profile?.student?.name,
+          } : null}
+          onSaved={loadProfile}
+          requireRating={true}
         />
       </DialogContent>
     </Dialog>

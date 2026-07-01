@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Star, ArrowRight, LogOut, User, Users, Home } from 'lucide-react';
+import { Star, ArrowRight, LogOut, User, Users, Home, CalendarCheck, CalendarX, Loader2 } from 'lucide-react';
 import api from '@/utils/api';
 import { toast } from 'sonner';
 import NotificationBell from '@/components/NotificationBell';
@@ -13,6 +13,8 @@ const TeachersList = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [slotCounts, setSlotCounts] = useState(null); // null while loading, object once loaded
+  const [activeBooking, setActiveBooking] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -20,9 +22,13 @@ const TeachersList = () => {
 
   const loadData = async () => {
     try {
-      // Always load teachers (public)
-      const teachersRes = await api.get('/teachers');
+      // Always load teachers (public) — plus slot counts in parallel.
+      const [teachersRes, slotsCountsRes] = await Promise.all([
+        api.get('/teachers'),
+        api.get('/public/teachers-slots-counts').catch(() => ({ data: { counts: {} } })),
+      ]);
       setTeachers(teachersRes.data);
+      setSlotCounts(slotsCountsRes.data?.counts || {});
       
       // Try to load user if logged in
       const sessionToken = localStorage.getItem('session_token');
@@ -31,6 +37,13 @@ const TeachersList = () => {
           const userRes = await api.get('/auth/me');
           setUser(userRes.data);
           setIsLoggedIn(true);
+          // Also fetch active booking so we can show a global notice above the list.
+          if (userRes.data?.role === 'student') {
+            try {
+              const activeRes = await api.get('/student/active-booking');
+              setActiveBooking(activeRes.data?.has_active_booking ? activeRes.data.session : null);
+            } catch (_) { setActiveBooking(null); }
+          }
         } catch (error) {
           // Not logged in, that's ok
           setIsLoggedIn(false);
@@ -60,12 +73,44 @@ const TeachersList = () => {
   };
 
   const handleBookSession = (teacherId) => {
-    if (isLoggedIn) {
-      navigate(`/book/${teacherId}`);
-    } else {
+    if (!isLoggedIn) {
       toast.info('يرجى تسجيل الدخول أولاً لحجز حصة');
       navigate('/login');
+      return;
     }
+    // P1: block if student already has an active booking.
+    if (activeBooking) {
+      toast.error('لديك حصة نشطة بالفعل. لا يمكنك حجز حصة جديدة حتى تنتهي الحالية أو يتم إلغاؤها.');
+      return;
+    }
+    navigate(`/book/${teacherId}`);
+  };
+
+  // P2: derive availability info per teacher
+  const renderSlotBadge = (teacherId) => {
+    if (slotCounts === null) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-gray-100 text-gray-500 font-plex" data-testid={`slot-status-${teacherId}`}>
+          <Loader2 size={12} className="animate-spin" />
+          جاري التحقق من المواعيد...
+        </span>
+      );
+    }
+    const count = slotCounts[teacherId] || 0;
+    if (count > 0) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-green-100 text-green-700 font-plex" data-testid={`slot-status-${teacherId}`}>
+          <CalendarCheck size={12} />
+          {count === 1 ? 'موعد واحد متاح' : `${count} مواعيد متاحة`}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-red-50 text-red-600 font-plex" data-testid={`slot-status-${teacherId}`}>
+        <CalendarX size={12} />
+        لا توجد مواعيد متاحة
+      </span>
+    );
   };
 
   if (loading) {
@@ -164,6 +209,31 @@ const TeachersList = () => {
           </p>
         </div>
 
+        {/* P1: global active-booking notice for logged-in students */}
+        {activeBooking && (
+          <Card className="mb-6 border-2 border-amber-400 bg-amber-50/60" data-testid="teachers-active-booking-notice">
+            <CardContent className="p-4 sm:p-5">
+              <p className="font-amiri text-base sm:text-lg font-bold text-amber-800 mb-1">
+                لديك حصة نشطة بالفعل
+              </p>
+              <p className="font-plex text-xs sm:text-sm text-amber-900 leading-relaxed">
+                لا يمكنك حجز حصة جديدة حتى تحضر الحصة الحالية أو يتم إلغاؤها.
+                {activeBooking.teacher_name && (
+                  <> الحصة الحالية مع <span className="font-bold">{activeBooking.teacher_name}</span></>
+                )}
+                {activeBooking.scheduled_time && (
+                  <> بتاريخ <span className="font-bold" dir="ltr">
+                    {new Date(activeBooking.scheduled_time).toLocaleString('en-US', {
+                      dateStyle: 'medium', timeStyle: 'short'
+                    })}
+                  </span></>
+                )}
+                .
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Teachers Grid */}
         {teachers.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -190,7 +260,12 @@ const TeachersList = () => {
                     <h3 className="font-amiri text-xl sm:text-2xl font-bold text-primary mb-2 text-center">
                       {teacher.name}
                     </h3>
-                    
+
+                    {/* P2: availability status badge */}
+                    <div className="mb-2 sm:mb-3">
+                      {renderSlotBadge(teacher.teacher_id)}
+                    </div>
+
                     {teacher.specialization && (
                       <p className="font-plex text-xs sm:text-sm text-muted-foreground mb-2 sm:mb-3 text-center">
                         {teacher.specialization}
@@ -215,9 +290,16 @@ const TeachersList = () => {
                       onClick={() => handleBookSession(teacher.teacher_id)}
                       className="w-full rounded-full mt-auto"
                       size="sm"
+                      disabled={
+                        !!activeBooking ||
+                        (slotCounts !== null && (slotCounts[teacher.teacher_id] || 0) === 0)
+                      }
                     >
-                      احجز حصة
-                      <ArrowRight className="mr-2" size={16} />
+                      {activeBooking
+                        ? 'الحجز غير متاح'
+                        : (slotCounts !== null && (slotCounts[teacher.teacher_id] || 0) === 0
+                          ? 'لا توجد مواعيد متاحة'
+                          : (<>احجز حصة<ArrowRight className="mr-2" size={16} /></>))}
                     </Button>
                   </div>
                 </CardContent>

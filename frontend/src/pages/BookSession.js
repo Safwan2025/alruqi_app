@@ -16,6 +16,8 @@ const BookSession = () => {
   const [booking, setBooking] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState(null);
 
+  const [activeBooking, setActiveBooking] = useState(null);
+
   useEffect(() => {
     loadData();
   }, [teacherId]);
@@ -30,6 +32,21 @@ const BookSession = () => {
       setTeacher(teacherRes.data);
       setUser(userRes.data);
       setAvailableSlots(slotsRes.data);
+
+      // Fetch active booking for the current student (if any) so we can
+      // pre-emptively block booking and show a clear Arabic notice.
+      if (userRes.data?.role === 'student') {
+        try {
+          const activeRes = await api.get('/student/active-booking');
+          if (activeRes.data?.has_active_booking) {
+            setActiveBooking(activeRes.data.session);
+          } else {
+            setActiveBooking(null);
+          }
+        } catch (_) {
+          setActiveBooking(null);
+        }
+      }
     } catch (error) {
       toast.error('فشل تحميل بيانات المعلم');
     } finally {
@@ -53,7 +70,14 @@ const BookSession = () => {
       toast.error('الرجاء اختيار موعد');
       return;
     }
-    
+
+    // P1: block if student already has an active booking (also enforced in
+    // backend book_session; this is a UX shortcut).
+    if (activeBooking) {
+      toast.error('لديك حصة نشطة بالفعل. لا يمكنك حجز حصة جديدة حتى تنتهي الحالية أو يتم إلغاؤها.');
+      return;
+    }
+
     setBooking(true);
 
     try {
@@ -66,7 +90,19 @@ const BookSession = () => {
       toast.success('تم حجز الحصة بنجاح!');
       navigate('/dashboard/student');
     } catch (error) {
-      toast.error('فشل حجز الحصة');
+      // P1: handle the 409 active-booking response specifically.
+      const status = error.response?.status;
+      const detail = error.response?.data?.detail;
+      let message = 'فشل حجز الحصة';
+      if (status === 409 && detail && typeof detail === 'object') {
+        message = detail.message || message;
+        if (detail.active_session) {
+          setActiveBooking(detail.active_session);
+        }
+      } else if (typeof detail === 'string' && detail.trim()) {
+        message = detail;
+      }
+      toast.error(message);
     } finally {
       setBooking(false);
     }
@@ -143,6 +179,28 @@ const BookSession = () => {
 
       <div className="container mx-auto px-4 sm:px-6 py-6 sm:py-10">
         <div className="max-w-4xl mx-auto">
+          {/* P1: Active-booking notice — blocks new bookings until the current one ends or is cancelled */}
+          {activeBooking && (
+            <Card className="mb-4 border-2 border-amber-400 bg-amber-50/60" data-testid="active-booking-notice">
+              <CardContent className="p-4 sm:p-5">
+                <p className="font-amiri text-lg sm:text-xl font-bold text-amber-800 mb-2">
+                  لديك حصة نشطة بالفعل
+                </p>
+                <p className="font-plex text-sm text-amber-900 leading-relaxed">
+                  لديك حصة محجوزة مع <span className="font-bold">{activeBooking.teacher_name}</span>
+                  {activeBooking.scheduled_time ? (
+                    <> بتاريخ <span className="font-bold" dir="ltr">
+                      {new Date(activeBooking.scheduled_time).toLocaleString('en-US', {
+                        dateStyle: 'medium', timeStyle: 'short'
+                      })}
+                    </span></>
+                  ) : null}
+                  . لا يمكنك حجز حصة جديدة حتى تحضر الحصة الحالية أو يتم إلغاؤها.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Teacher Info */}
           <Card className="mb-6 sm:mb-8 fade-in" data-testid="teacher-info-card">
             <CardContent className="p-4 sm:p-8">
@@ -225,15 +283,15 @@ const BookSession = () => {
                     <Button
                       data-testid="submit-booking-btn"
                       type="submit"
-                      disabled={booking || !selectedSlot}
+                      disabled={booking || !selectedSlot || !!activeBooking}
                       className="flex-1 rounded-full py-6"
                     >
                       {booking ? (
                         <div className="spinner border-2 border-white border-t-transparent rounded-full w-5 h-5"></div>
                       ) : (
                         <>
-                          تأكيد الحجز
-                          <ArrowRight className="mr-2" size={18} />
+                          {activeBooking ? 'الحجز غير متاح حالياً' : 'تأكيد الحجز'}
+                          {!activeBooking && <ArrowRight className="mr-2" size={18} />}
                         </>
                       )}
                     </Button>

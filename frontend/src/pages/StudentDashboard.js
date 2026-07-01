@@ -21,6 +21,8 @@ import CompetitionHistoryList from '@/components/CompetitionHistoryList';
 import PeerReviewSection from '@/components/PeerReviewSection';
 import StudentWeeklyPlansViewer from '@/components/StudentWeeklyPlansViewer';
 import MyCertificates from '@/components/MyCertificates';
+import JoinFallbackDialog from '@/components/JoinFallbackDialog';
+import { openMeetLoadingTab, normalizeMeetUrl } from '@/utils/openMeetTab';
 
 const StudentDashboard = () => {
   const navigate = useNavigate();
@@ -36,6 +38,7 @@ const StudentDashboard = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [composeTarget, setComposeTarget] = useState(null);
   const [joinCompOpen, setJoinCompOpen] = useState(false);
+  const [joinFallback, setJoinFallback] = useState({ open: false, link: '', error: '' });
 
   useEffect(() => {
     loadData();
@@ -103,47 +106,27 @@ const StudentDashboard = () => {
   //   }
   // };
 
-  const normalizeUrl = (url) => {
-  if (!url) return '';
-  const trimmed = url.trim();
-
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    return trimmed;
-  }
-
-  return `https://${trimmed}`;
-};
+  const normalizeUrl = normalizeMeetUrl;
 
 const handleJoinSession = async (session) => {
   /*
-   * iPhone/Safari popup-blocker fix.
+   * Mobile-safe join flow (iPhone Safari + Android Chrome).
    *
-   * Safari only allows `window.open(...)` calls that happen SYNCHRONOUSLY
-   * inside the click handler. Once we `await` the API calls, the JS task
-   * resumes in a new microtask without an active "user gesture" token and
-   * Safari silently blocks any subsequent `window.open(url, '_blank')`.
-   *
-   * The fix is to open a blank tab synchronously *first* (Safari allows
-   * that), keep a reference to it, then redirect that already-open tab
-   * once the meet link is ready.
-   *
-   * Fallbacks (in order):
-   *  1. If `window.open('', '_blank')` returned a valid tab → redirect it.
-   *  2. If the blank tab was blocked too → set `window.location.href`
-   *     directly so the student still reaches the session (in-tab nav is
-   *     always allowed).
-   *  3. If the API fails before we get a meet link → close the blank tab
-   *     and show a clickable fallback link via toast.
+   * 1. Synchronously open a new tab with an Arabic "loading" HTML — this
+   *    keeps Safari's user-gesture happy AND never leaves the user on
+   *    about:blank.
+   * 2. Fire the API calls. When the link is ready, REPLACE the loading
+   *    HTML with a "ready" page that has:
+   *       - a big "الدخول إلى الحصة الآن" anchor (real user gesture inside
+   *         the new tab → Google Meet stops redirecting to the install page)
+   *       - a copyable manual link + "نسخ الرابط" button
+   *    See utils/openMeetTab.js for the full rationale.
+   * 3. On failure OR missing link, replace the HTML with an Arabic error
+   *    page (no more blank tab).
+   * 4. If the tab was blocked entirely (very strict popup blocker or
+   *    in-app WebView), show an in-page fallback dialog (JoinFallbackDialog).
    */
-  /* IMPORTANT: do NOT pass 'noopener,noreferrer' here.
-     Those features sever the JS reference to the new tab, which means
-     `preOpenedWin.location.href = link` later becomes a no-op and Safari
-     leaves the student staring at a blank tab. Open with no features so
-     we keep a live handle to the tab. */
-  let preOpenedWin = null;
-  try {
-    preOpenedWin = window.open('about:blank', '_blank');
-  } catch (_) { preOpenedWin = null; }
+  const tab = openMeetLoadingTab();
 
   try {
     await api.post(`/sessions/${session.session_id}/join`);
@@ -152,49 +135,24 @@ const handleJoinSession = async (session) => {
     const meetLink = normalizeUrl(response.data?.recitation_link);
 
     if (!meetLink) {
-      if (preOpenedWin && !preOpenedWin.closed) preOpenedWin.close();
-      toast.error('لم يتم تعيين رابط الحصة بعد');
+      const msg = 'لم يتم تعيين رابط الحصة بعد. يرجى مراجعة إدارة المقرأة.';
+      if (tab.wasOpened) tab.showError(msg);
+      else setJoinFallback({ open: true, link: '', error: msg });
+      toast.error(msg);
       return;
     }
 
-    if (preOpenedWin && !preOpenedWin.closed) {
-      /* Safari path: navigate the tab we opened synchronously. */
-      preOpenedWin.location.href = meetLink;
+    if (tab.wasOpened) {
+      tab.showReady(meetLink);
     } else {
-      /* Blank tab was blocked (very strict Safari settings). Try a
-         hidden <a> click — still respected because it shares the same
-         user-gesture chain as the original button click. */
-      const a = document.createElement('a');
-      a.href = meetLink;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      /* Last resort: tell the student and give them a clickable link so
-         they can finish the navigation in one tap. */
-      toast.success(
-        (t) => (
-          <span>
-            إذا لم تُفتح الحصة تلقائيًا، {' '}
-            <a
-              href={meetLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => toast.dismiss(t.id)}
-              style={{ color: '#2563eb', textDecoration: 'underline', fontWeight: 600 }}
-            >
-              اضغط هنا للدخول
-            </a>
-          </span>
-        ),
-        { duration: 8000 }
-      );
+      // Popup was blocked entirely — show in-page fallback with the link.
+      setJoinFallback({ open: true, link: meetLink, error: '' });
     }
   } catch (error) {
-    if (preOpenedWin && !preOpenedWin.closed) preOpenedWin.close();
-    toast.error(error.response?.data?.detail || 'فشل في الانضمام');
+    const detail = error.response?.data?.detail || 'فشل في الانضمام إلى الحصة';
+    if (tab.wasOpened) tab.showError(detail);
+    else setJoinFallback({ open: true, link: '', error: detail });
+    toast.error(detail);
   }
 };
 
@@ -569,6 +527,12 @@ const handleJoinSession = async (session) => {
       <SetPasswordDialog open={showSetPasswordDialog} onClose={() => setShowSetPasswordDialog(false)} onSuccess={() => loadData()} />
       <CommitmentSetupDialog open={needsCommitment} onSaved={() => setNeedsCommitment(false)} />
       <JoinCompetitionDialog open={joinCompOpen} onClose={() => setJoinCompOpen(false)} selfUserId={user?.user_id} />
+      <JoinFallbackDialog
+        open={joinFallback.open}
+        onClose={() => setJoinFallback({ open: false, link: '', error: '' })}
+        link={joinFallback.link}
+        errorMessage={joinFallback.error}
+      />
     </div>
   );
 };
